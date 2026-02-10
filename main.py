@@ -3,6 +3,14 @@ from dotenv import load_dotenv
 from crewai import Agent, Task, Crew, LLM
 from crewai_tools import SerperDevTool
 from tools import stock_price_analyzer
+from pydantic import BaseModel
+
+class StockAnalysis(BaseModel):
+    ticker: str
+    technical_signal: str
+    sentiment_score: int
+    risk_summary: str
+    recommendation: str
 
 load_dotenv()
 
@@ -60,7 +68,8 @@ def run_financial_analysis(ticker: str):
     risk_task = Task(description=f'Critique reports for {ticker}. Find 3 threats.',
                      expected_output='Risk Disclosure + Confidence Score.',
                      agent=risk_manager,
-                     context=[tech_task, news_task]
+                     context=[tech_task, news_task],
+                     output_json=StockAnalysis
                     )
 
     # 4. Assemble & Execute
