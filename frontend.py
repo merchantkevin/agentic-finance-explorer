@@ -5,61 +5,56 @@ import time
 st.set_page_config(page_title="AI Financial Committee", layout="wide")
 
 st.title("🤖 AI Stock Investment Committee")
-st.markdown("Enter an Indian Stock Ticker (e.g., **RELIANCE**, **TCS**, **HDFCBANK**)")
 
-# Sidebar for Input
-ticker = st.sidebar.text_input("NSE Ticker", value="RELIANCE")
-if not ticker.endswith(".NS"):
-    ticker = f"{ticker}.NS"
+# 1. FIX YOUR URL HERE
+# Make sure there is NO trailing slash at the end
+API_URL = "https://agentic-finance-explorer.onrender.com" 
 
-analyze_button = st.sidebar.button("Run Multi-Agent Analysis")
-
-# Use your Render URL here!
-API_URL = "https://agentic-finance-.onrender.com" 
+ticker = st.sidebar.text_input("NSE Ticker (e.g. RELIANCE)", value="RELIANCE")
+analyze_button = st.sidebar.button("Run Analysis")
 
 if analyze_button:
-    with st.spinner(f"Agents are collaborating on {ticker}... This takes ~60 seconds."):
-        # 1. Start Analysis
+    formatted_ticker = ticker.strip().upper()
+    if not formatted_ticker.endswith(".NS"):
+        formatted_ticker += ".NS"
+
+    with st.spinner(f"Agents are analyzing {formatted_ticker}..."):
         try:
-            res = requests.post(f"{API_URL}/analyze", json={"ticker": ticker})
-            job_id = res.json().get("job_id")
+            # Send the request
+            response = requests.post(
+                f"{API_URL}/analyze", 
+                json={"ticker": formatted_ticker},
+                timeout=10
+            )
             
-            if not job_id and res.json().get("status") == "completed":
-                # Handle cached results immediately
-                data = res.json().get("result")
+            # DEBUG: If it's not a success code, show the raw text
+            if response.status_code != 200:
+                st.error(f"Server Error ({response.status_code}): {response.text}")
             else:
-                # 2. Poll for status
-                completed = False
-                while not completed:
-                    status_res = requests.get(f"{API_URL}/status/{job_id}").json()
-                    if status_res["status"] == "completed":
-                        data = status_res["result"]
-                        completed = True
-                    elif status_res["status"] == "failed":
-                        st.error("Analysis Failed.")
-                        break
-                    time.sleep(5) # Poll every 5 seconds
-            
-            # 3. Display Results in Beautiful Cards
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("📊 Technical Signal")
-                st.info(data.get("technical_signal", "N/A"))
+                res_json = response.json()
+                job_id = res_json.get("job_id")
                 
-                st.subheader("📰 Sentiment Score")
-                st.metric(label="Market Sentiment", value=f"{data.get('sentiment_score', 0)}/10")
+                # If it was a cached result
+                if res_json.get("status") == "completed":
+                    st.success("Analysis found in cache!")
+                    st.json(res_json.get("result"))
+                else:
+                    # Polling for background job
+                    status_area = st.empty()
+                    completed = False
+                    while not completed:
+                        status_area.write("⏱️ Agents are still working...")
+                        status_res = requests.get(f"{API_URL}/status/{job_id}").json()
+                        
+                        if status_res["status"] == "completed":
+                            status_area.empty()
+                            st.subheader(f"Final Report for {formatted_ticker}")
+                            st.write(status_res["result"])
+                            completed = True
+                        elif status_res["status"] == "failed":
+                            st.error(f"Agent Error: {status_res.get('error')}")
+                            break
+                        time.sleep(5)
 
-            with col2:
-                st.subheader("⚠️ Risk Audit")
-                st.warning(data.get("risk_summary", "No risks identified."))
-            
-            st.divider()
-            st.subheader("💡 Final Recommendation")
-            st.success(data.get("recommendation", "Neutral"))
-            
         except Exception as e:
-            st.error(f"Could not connect to API: {e}")
-
-st.sidebar.markdown("---")
-st.sidebar.caption("Built with CrewAI, FastAPI, and GPT-4o-mini")
+            st.error(f"Connection Failed: {e}")
