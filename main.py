@@ -42,7 +42,7 @@ def run_financial_analysis(ticker: str):
         Look for regulatory risks, promoter issues, or macro-economic threats.""",
         llm=my_llm,
         verbose=True,
-        allow delegation=False
+        allow_delegation=False
     )
 
     # 3. Define Tasks
