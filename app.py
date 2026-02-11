@@ -2,6 +2,7 @@ from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel
 import uuid
 from main import run_financial_analysis
+import json
 
 app = FastAPI(title="AI Financial Analyst API")
 
@@ -34,8 +35,28 @@ async def get_status(job_id: str):
 
 def execute_analysis(job_id: str, ticker: str):
     try:
-        # This calls the function in main.py
         output = run_financial_analysis(ticker)
-        results_db[job_id] = {"status": "completed", "result": str(output)}
+        
+        # 1. Try to get the JSON dict from CrewAI
+        if hasattr(output, 'json_dict') and output.json_dict:
+            analysis_data = output.json_dict
+        else:
+            # 2. If it's just a string, wrap it in a dictionary so frontend doesn't crash
+            analysis_data = {
+                "ticker": ticker,
+                "technical_signal": "Unknown",
+                "sentiment_score": 5.0,
+                "risk_summary": str(output), # Put the raw text here
+                "recommendation": "Agent returned raw text. Please check logs."
+            }
+
+        cache_data = {
+            "timestamp": datetime.now().isoformat(),
+            "result": analysis_data
+        }
+        with open(get_cache_filename(ticker), "w") as f:
+            json.dump(cache_data, f)
+            
+        results_db[job_id] = {"status": "completed", "result": analysis_data}
     except Exception as e:
         results_db[job_id] = {"status": "failed", "error": str(e)}

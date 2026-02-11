@@ -78,6 +78,17 @@ if analyze_button:
                         if status_res["status"] == "completed":
                             data = status_res["result"]
                             placeholder.empty()
+
+                            # NEW: Safety check - if data is a string, try to parse it as JSON
+                            if isinstance(data, str):
+                            try:
+                                data = json.loads(data)
+                            except:
+                                # If it's totally unparsable, make it a dummy dict
+                                data = {"recommendation": data, "risk_summary": "Check raw output."}
+    
+                            # Now .get() will always work!
+                            st.subheader(f"Final Report for {ticker}")
                             break
                         elif status_res["status"] == "failed":
                             st.error(f"Analysis Failed: {status_res.get('error')}")
