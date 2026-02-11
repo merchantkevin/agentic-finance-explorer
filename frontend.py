@@ -2,6 +2,16 @@ import streamlit as st
 import requests
 import time
 
+# Helper function to split text into 4 clean bullets
+def get_risk_bullets(text):
+    # Split by common delimiters (periods, commas, or newlines)
+    raw_points = [p.strip() for p in text.replace('.', '\n').split('\n') if len(p) > 5]
+    # Ensure we show at least 4 points (fill with generic if AI is brief)
+    while len(raw_points) < 4:
+        raw_points.append("Monitoring secondary market volatility.")
+    return raw_points[:4]
+
+
 st.set_page_config(page_title="FinAI | Intelligence", page_icon="🏦", layout="wide")
 
 # Custom UI Styling
@@ -10,6 +20,12 @@ st.markdown("""
     .report-card { background-color: #ffffff; padding: 20px; border-radius: 12px; border-left: 6px solid #1a73e8; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); color: #1f2937; }
     .risk-box { background-color: #fff5f5; padding: 15px; border-radius: 10px; border: 1px solid #feb2b2; color: #9b2c2c; }
     </style>
+    [data-testid="stMetricLabel"] {
+    font-size: 0.8rem !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.2rem !important;
+    }
     """, unsafe_allow_html=True)
 
 st.title("🏛️ Financial Intelligence Committee")
@@ -63,7 +79,14 @@ if analyze_btn:
 
                 with c_side:
                     st.markdown("#### 🛡️ Risk Audit")
-                    st.markdown(f"""<div class='risk-box'>{result.get('risk_summary', 'No immediate threats.')}</div>""", unsafe_allow_html=True)
+                    risks = get_risk_bullets(result.get('risk_summary', ''))
+                    for point in risks:
+                        st.markdown(f"""
+                            <div style="background-color: #fff5f5; padding: 10px; border-radius: 8px; 
+                            border-left: 4px solid #9b2c2c; margin-bottom: 8px; font-size: 0.85rem; color: #9b2c2c;">
+                            ⚠️ {point}
+                            </div>
+                            """, unsafe_allow_html=True)
             else:
                 st.error(f"Server Error: {res.status_code}. Check Render logs.")
 
