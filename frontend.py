@@ -44,7 +44,7 @@ st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2534/2534351.png", widt
 st.sidebar.title("Control Panel")
 st.sidebar.markdown("---")
 ticker_input = st.sidebar.text_input("Enter NSE Ticker", value="RELIANCE", help="e.g. INFY, TCS, HDFCBANK")
-analyze_button = st.sidebar.button("🚀 Execute Analysis", use_container_path=True)
+analyze_button = st.sidebar.button("🚀 Execute Analysis", use_container_width=True)
 
 # --- Header Section ---
 st.title("🏛️ AI Investment Committee")
