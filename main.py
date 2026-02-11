@@ -8,7 +8,7 @@ from pydantic import BaseModel
 class StockAnalysis(BaseModel):
     ticker: str
     technical_signal: str
-    sentiment_score: int
+    sentiment_score: float
     risk_summary: str
     recommendation: str
 
@@ -65,11 +65,14 @@ def run_financial_analysis(ticker: str):
                      context=[tech_task]
                     )
     
-    risk_task = Task(description=f'Critique reports for {ticker}. Find 3 threats.',
-                     expected_output='Risk Disclosure + Confidence Score.',
-                     agent=risk_manager,
-                     context=[tech_task, news_task],
-                     output_json=StockAnalysis
+    risk_task = Task(
+                    description="""Analyze risks for {ticker} based on tech and news. 
+                    Provide a sentiment_score between 0 and 10 (where 0 is extreme panic and 10 is euphoria).
+                    Ensure all fields in the JSON are filled accurately.""", 
+                    expected_output='A structured JSON object with analysis and risk summary.', 
+                    agent=risk_manager, 
+                    context=[t1, t2],
+                    output_json=StockAnalysis
                     )
 
     # 4. Assemble & Execute
