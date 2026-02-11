@@ -2,145 +2,102 @@ import streamlit as st
 import requests
 import time
 
-# --- Page Configuration ---
-st.set_page_config(
-    page_title="AI Financial Committee",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+# --- Page Config ---
+st.set_page_config(page_title="FinAI | Advisor", page_icon="🏦", layout="wide")
 
-# --- Custom CSS for Visual Flair ---
+# --- Custom Styling ---
 st.markdown("""
     <style>
-    .main {
-        background-color: #f5f7f9;
-    }
-    .stMetric {
+    [data-testid="stMetric"] {
         background-color: #ffffff;
+        border: 1px solid #e0e0e0;
         padding: 15px;
         border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
-    .report-card {
+    .report-section {
         background-color: #ffffff;
-        padding: 25px;
-        border-radius: 15px;
-        border-left: 5px solid #007bff;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-        margin-bottom: 20px;
-    }
-    .risk-card {
-        background-color: #fff5f5;
         padding: 20px;
         border-radius: 12px;
-        border: 1px solid #feb2b2;
+        border-left: 6px solid #1a73e8;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .risk-item {
+        color: #d32f2f;
+        background-color: #fdecea;
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 8px;
+        border-left: 4px solid #d32f2f;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- Sidebar ---
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2534/2534351.png", width=80)
-st.sidebar.title("Control Panel")
-st.sidebar.markdown("---")
-ticker_input = st.sidebar.text_input("Enter NSE Ticker", value="RELIANCE", help="e.g. INFY, TCS, HDFCBANK")
-analyze_button = st.sidebar.button("🚀 Execute Analysis", use_container_width=True)
-
-# --- Header Section ---
-st.title("🏛️ AI Investment Committee")
-st.caption("Multi-Agent Intelligence for Indian Equity Markets")
+# --- App Header ---
+st.title("🏛️ Financial Intelligence Committee")
+st.caption("AI-Driven Equity Analysis for Indian Markets")
 st.divider()
 
-# --- Logic & API Call ---
-API_URL = "https://agentic-finance-explorer.onrender.com" # <--- ENSURE THIS IS CORRECT
+# --- Inputs ---
+ticker = st.sidebar.text_input("NSE Ticker", value="RELIANCE").upper()
+if not ticker.endswith(".NS"): ticker += ".NS"
+analyze_btn = st.sidebar.button("Execute Strategic Analysis", use_container_width=True)
 
-if analyze_button:
-    ticker = ticker_input.strip().upper()
-    if not ticker.endswith(".NS"):
-        ticker += ".NS"
+# --- Helper: Bullet Points ---
+def format_bullets(text):
+    # Splits by common delimiters and returns clean HTML bullets
+    items = text.replace('.', '\n').split('\n')
+    return "".join([f'<div class="risk-item">⚠️ {i.strip()}</div>' for i in items if len(i) > 5])
 
-    with st.spinner("🤖 **Committee is debating...** Fetching data and searching news."):
+# --- Main Logic ---
+API_URL = "https://your-app-name.onrender.com"
+
+if analyze_btn:
+    with st.spinner(f"Agents are deliberating on {ticker}..."):
         try:
-            response = requests.post(f"{API_URL}/analyze", json={"ticker": ticker}, timeout=15)
+            res = requests.post(f"{API_URL}/analyze", json={"ticker": ticker})
+            data = res.json()
             
-            if response.status_code == 200:
-                res_json = response.json()
-                job_id = res_json.get("job_id")
-                
-                # Check for completed/cached results
-                if res_json.get("status") == "completed":
-                    data = res_json.get("result")
-                else:
-                    # Polling
-                    placeholder = st.empty()
-                    while True:
-                        status_res = requests.get(f"{API_URL}/status/{job_id}").json()
-                        if status_res["status"] == "completed":
-                            data = status_res["result"]
-                            placeholder.empty()  # NEW: Safety check - if data is a string, try to parse it as JSON
-                            if isinstance(data, str):
-                                try:
-                                    data = json.loads(data)
-                                except:
-                                    # If it's totally unparsable, make it a dummy dict
-                                    data = {"recommendation": data, "risk_summary": "Check raw output."}
-    
-                                # Now .get() will always work!
-                                st.subheader(f"Final Report for {ticker}")
-                            break
-                        elif status_res["status"] == "failed":
-                            st.error(f"Analysis Failed: {status_res.get('error')}")
-                            st.stop()
-                        placeholder.info("🕵️ Agents are investigating technicals and news headlines...")
-                        time.sleep(5)
-
-                # --- CREATIVE DATA DISPLAY ---
-                
-                # 1. Top Metrics Bar
-                m1, m2, m3 = st.columns(3)
-                with m1:
-                    st.metric("Ticker", ticker)
-                with m2:
-                    sentiment = data.get("sentiment_score", 5)
-                    st.metric("Sentiment Score", f"{sentiment}/10", delta=sentiment-5)
-                with m3:
-                    signal = data.get("technical_signal", "Neutral")
-                    st.metric("Signal", signal, delta_color="normal")
-
-                st.markdown("<br>", unsafe_allow_html=True)
-
-                # 2. Main Body Columns
-                col_left, col_right = st.columns([2, 1])
-
-                with col_left:
-                    st.markdown(f"""
-                    <div class="report-card">
-                        <h3>📋 Executive Summary</h3>
-                        <p style="font-size: 1.1rem; color: #4a5568;">{data.get('recommendation', 'No recommendation available.')}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                with col_right:
-                    st.markdown(f"""
-                    <div class="risk-card">
-                        <h4>⚠️ Risk Audit</h4>
-                        <p style="font-size: 0.95rem;">{data.get('risk_summary', 'Low risk environment.')}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                st.success("✅ Analysis Complete. This report is stored in memory for 24 hours.")
-
+            # Poll if job started
+            if data.get("status") == "started":
+                job_id = data.get("job_id")
+                while True:
+                    status_res = requests.get(f"{API_URL}/status/{job_id}").json()
+                    if status_res["status"] == "completed":
+                        result = status_res["result"]
+                        break
+                    time.sleep(5)
             else:
-                st.error(f"API Error: {response.text}")
+                result = data.get("result")
+
+            # --- THE CLEAN UI ---
+            
+            # 1. Top Metrics (Ticker Info)
+            c1, c2, c3 = st.columns(3)
+            with c1: st.metric("Market Ticker", ticker)
+            with c2: st.metric("Technical Signal", result.get('technical_signal', 'N/A'))
+            with c3: st.metric("Sentiment Score", f"{result.get('sentiment_score', 0)}/10")
+
+            st.markdown("### 📊 Analyst Reports")
+            col_main, col_side = st.columns([2, 1])
+
+            with col_main:
+                # Recommendation Card
+                st.markdown(f"""
+                <div class="report-section">
+                    <h4 style="margin-top:0;">💡 Committee Recommendation</h4>
+                    <p style="font-size:1.1rem; line-height:1.6;">{result.get('recommendation', 'Drafting...')}</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with col_side:
+                # Risk Audit Card (Bulleted)
+                st.markdown("#### 🛡️ Risk Audit")
+                risk_html = format_bullets(result.get('risk_summary', 'No immediate threats identified.'))
+                st.markdown(risk_html, unsafe_allow_html=True)
 
         except Exception as e:
-            st.error(f"Could not connect to the agents: {e}")
+            st.error(f"Analysis failed: {e}")
+
 else:
-    # Default State
-    st.info("👈 Enter a ticker in the sidebar and click Execute to start the agentic workflow.")
-    
-    # Optional: Display some "Latest Trends" or static data here to make it look full
-    c1, c2, c3 = st.columns(3)
-    c1.image("https://img.icons8.com/clouds/100/000000/chart.png")
-    c2.image("https://img.icons8.com/clouds/100/000000/news.png")
-    c3.image("https://img.icons8.com/clouds/100/000000/shield.png")
+    st.info("👈 Enter a ticker and click the button to see the multi-agent analysis.")
