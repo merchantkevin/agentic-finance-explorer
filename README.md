@@ -6,7 +6,7 @@
 
 An autonomous investment committee that performs end-to-end technical and fundamental analysis of Indian stocks. By orchestrating a crew of specialized AI agents, the system bridges the gap between raw market data and actionable investment intelligence.
 
-🔗 **[Live Dashboard](YOUR_STREAMLIT_URL_HERE)** | 📖 **[API Documentation](YOUR_RENDER_URL_HERE/docs)**
+🔗 **[Live Dashboard](https://agentic-finance-explorer-zrkwkgnuyidyfgbqc8jb4a.streamlit.app/)** | 📖 **[API Documentation](https://agentic-finance-explorer.onrender.com/docs)**
 
 ---
 
@@ -16,8 +16,6 @@ The system follows a **Decoupled Agentic Pattern**, separating the reasoning eng
 - **Reasoning Engine (Backend):** A FastAPI server hosting a CrewAI orchestration layer.
 - **Frontend (UI):** A Streamlit dashboard optimized for executive decision-making.
 - **Data Guardrails:** Pydantic-enforced schemas to ensure deterministic AI outputs.
-
-[Image of a sequence diagram showing a user request entering a FastAPI endpoint, triggering a background CrewAI task, and returning a job ID]
 
 ## 🧠 The "Committee" (Agents)
 The system simulates a high-level investment meeting through three distinct agents:
@@ -48,6 +46,6 @@ The system simulates a high-level investment meeting through three distinct agen
 
 1. **Clone & Install** (using `uv` for lightning-fast speeds):
    ```bash
-   git clone [https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git)
-   cd YOUR_REPO_NAME
+   git clone [https://github.com/merchantkevin/agentic-finance-explorer.git](https://github.com/merchantkevin/agentic-finance-explorer.git)
+   cd agentic-finance-explorer
    uv sync
