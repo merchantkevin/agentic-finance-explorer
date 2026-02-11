@@ -11,21 +11,36 @@ def get_risk_bullets(text):
         raw_points.append("Monitoring secondary market volatility.")
     return raw_points[:4]
 
-
+bullet_char = "\u2022"
 st.set_page_config(page_title="FinAI | Intelligence", page_icon="🏦", layout="wide")
 
 # Custom UI Styling
 st.markdown("""
     <style>
-    .report-card { background-color: #ffffff; padding: 20px; border-radius: 12px; border-left: 6px solid #1a73e8; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); color: #1f2937; }
-    .risk-box { background-color: #fff5f5; padding: 15px; border-radius: 10px; border: 1px solid #feb2b2; color: #9b2c2c; }
+    /* Target the metric label (e.g., 'Ticker') */
+    [data-testid="stMetricLabel"] > div {
+        font-size: 0.8rem !important;
+        color: #6b7280 !important;
+    }
+    
+    /* Target the metric value (e.g., 'RELIANCE.NS') */
+    [data-testid="stMetricValue"] > div {
+        font-size: 1.1rem !important;
+        font-weight: 700 !important;
+    }
+
+    /* Styling for the risk boxes */
+    .risk-bullet {
+        background-color: #fff5f5;
+        padding: 12px;
+        border-radius: 8px;
+        border-left: 4px solid #9b2c2c;
+        margin-bottom: 10px;
+        font-size: 0.85rem;
+        color: #9b2c2c;
+        line-height: 1.4;
+    }
     </style>
-    [data-testid="stMetricLabel"] {
-    font-size: 0.8rem !important;
-    }
-    [data-testid="stMetricValue"] {
-        font-size: 1.2rem !important;
-    }
     """, unsafe_allow_html=True)
 
 st.title("🏛️ Financial Intelligence Committee")
@@ -84,7 +99,7 @@ if analyze_btn:
                         st.markdown(f"""
                             <div style="background-color: #fff5f5; padding: 10px; border-radius: 8px; 
                             border-left: 4px solid #9b2c2c; margin-bottom: 8px; font-size: 0.85rem; color: #9b2c2c;">
-                            ⚠️ {point}
+                            {bullet_char} {point}
                             </div>
                             """, unsafe_allow_html=True)
             else:
