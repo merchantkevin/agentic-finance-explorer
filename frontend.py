@@ -2,102 +2,73 @@ import streamlit as st
 import requests
 import time
 
-# --- Page Config ---
-st.set_page_config(page_title="FinAI | Advisor", page_icon="🏦", layout="wide")
+st.set_page_config(page_title="FinAI | Intelligence", page_icon="🏦", layout="wide")
 
-# --- Custom Styling ---
+# Custom UI Styling
 st.markdown("""
     <style>
-    [data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
-        padding: 15px;
-        border-radius: 10px;
-    }
-    .report-section {
-        background-color: #ffffff;
-        padding: 20px;
-        border-radius: 12px;
-        border-left: 6px solid #1a73e8;
-        margin-bottom: 20px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .risk-item {
-        color: #d32f2f;
-        background-color: #fdecea;
-        padding: 10px;
-        border-radius: 5px;
-        margin-bottom: 8px;
-        border-left: 4px solid #d32f2f;
-    }
+    .report-card { background-color: #ffffff; padding: 20px; border-radius: 12px; border-left: 6px solid #1a73e8; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); color: #1f2937; }
+    .risk-box { background-color: #fff5f5; padding: 15px; border-radius: 10px; border: 1px solid #feb2b2; color: #9b2c2c; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- App Header ---
 st.title("🏛️ Financial Intelligence Committee")
-st.caption("AI-Driven Equity Analysis for Indian Markets")
-st.divider()
+st.sidebar.header("Agent Controls")
 
-# --- Inputs ---
+# --- USER INPUT ---
 ticker = st.sidebar.text_input("NSE Ticker", value="RELIANCE").upper()
 if not ticker.endswith(".NS"): ticker += ".NS"
 analyze_btn = st.sidebar.button("Execute Strategic Analysis", use_container_width=True)
 
-# --- Helper: Bullet Points ---
-def format_bullets(text):
-    # Splits by common delimiters and returns clean HTML bullets
-    items = text.replace('.', '\n').split('\n')
-    return "".join([f'<div class="risk-item">⚠️ {i.strip()}</div>' for i in items if len(i) > 5])
-
-# --- Main Logic ---
-API_URL = "https://your-app-name.onrender.com"
+# --- CHANGE THIS TO YOUR ACTUAL RENDER URL ---
+API_URL = "https://agentic-finance-explorer.onrender.com" 
 
 if analyze_btn:
     with st.spinner(f"Agents are deliberating on {ticker}..."):
         try:
-            res = requests.post(f"{API_URL}/analyze", json={"ticker": ticker})
-            data = res.json()
+            # Step 1: Request Analysis
+            res = requests.post(f"{API_URL}/analyze", json={"ticker": ticker}, timeout=15)
             
-            # Poll if job started
-            if data.get("status") == "started":
-                job_id = data.get("job_id")
-                while True:
-                    status_res = requests.get(f"{API_URL}/status/{job_id}").json()
-                    if status_res["status"] == "completed":
-                        result = status_res["result"]
-                        break
-                    time.sleep(5)
+            if res.status_code == 200:
+                data = res.json()
+                
+                if data.get("status") == "completed":
+                    result = data.get("result")
+                else:
+                    job_id = data.get("job_id")
+                    # Step 2: Polling
+                    with st.status("🔍 Agents investigating technicals and news...") as status:
+                        while True:
+                            status_res = requests.get(f"{API_URL}/status/{job_id}").json()
+                            if status_res.get("status") == "completed":
+                                result = status_res.get("result")
+                                status.update(label="Analysis Complete!", state="complete")
+                                break
+                            elif status_res.get("status") == "failed":
+                                st.error("Agents failed to reach a consensus.")
+                                st.stop()
+                            time.sleep(5)
+
+                # --- DISPLAY ---
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Ticker", ticker)
+                col2.metric("Signal", result.get('technical_signal', 'N/A'))
+                col3.metric("Sentiment", f"{result.get('sentiment_score', 0)}/10")
+
+                st.markdown("---")
+                c_main, c_side = st.columns([2, 1])
+
+                with c_main:
+                    st.markdown(f"""<div class='report-card'><h4>💡 Recommendation</h4><p>{result.get('recommendation', 'No data available.')}</p></div>""", unsafe_allow_html=True)
+
+                with c_side:
+                    st.markdown("#### 🛡️ Risk Audit")
+                    st.markdown(f"""<div class='risk-box'>{result.get('risk_summary', 'No immediate threats.')}</div>""", unsafe_allow_html=True)
             else:
-                result = data.get("result")
-
-            # --- THE CLEAN UI ---
-            
-            # 1. Top Metrics (Ticker Info)
-            c1, c2, c3 = st.columns(3)
-            with c1: st.metric("Market Ticker", ticker)
-            with c2: st.metric("Technical Signal", result.get('technical_signal', 'N/A'))
-            with c3: st.metric("Sentiment Score", f"{result.get('sentiment_score', 0)}/10")
-
-            st.markdown("### 📊 Analyst Reports")
-            col_main, col_side = st.columns([2, 1])
-
-            with col_main:
-                # Recommendation Card
-                st.markdown(f"""
-                <div class="report-section">
-                    <h4 style="margin-top:0;">💡 Committee Recommendation</h4>
-                    <p style="font-size:1.1rem; line-height:1.6;">{result.get('recommendation', 'Drafting...')}</p>
-                </div>
-                """, unsafe_allow_html=True)
-
-            with col_side:
-                # Risk Audit Card (Bulleted)
-                st.markdown("#### 🛡️ Risk Audit")
-                risk_html = format_bullets(result.get('risk_summary', 'No immediate threats identified.'))
-                st.markdown(risk_html, unsafe_allow_html=True)
+                st.error(f"Server Error: {res.status_code}. Check Render logs.")
 
         except Exception as e:
-            st.error(f"Analysis failed: {e}")
+            st.error(f"Handshake Failed: {e}. Check if Render URL is correct.")
 
 else:
-    st.info("👈 Enter a ticker and click the button to see the multi-agent analysis.")
+    st.info("Enter a ticker in the sidebar to begin.")
