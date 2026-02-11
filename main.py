@@ -71,7 +71,7 @@ def run_financial_analysis(ticker: str):
                     Ensure all fields in the JSON are filled accurately.""", 
                     expected_output='A structured JSON object with analysis and risk summary.', 
                     agent=risk_manager, 
-                    context=[t1, t2],
+                    context=[tech_task, news_task],
                     output_json=StockAnalysis
                     )
 
