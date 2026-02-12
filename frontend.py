@@ -2,6 +2,13 @@ import streamlit as st
 import requests
 import time
 
+st.set_page_config(
+    page_title="FinAI | Advisor", 
+    page_icon="🏦", 
+    layout="wide",
+    initial_sidebar_state="auto" # This helps mobile devices manage the sidebar better
+)
+
 # Helper function to split text into 4 clean bullets
 def get_risk_bullets(text):
     # Split by common delimiters (periods, commas, or newlines)
@@ -17,28 +24,25 @@ st.set_page_config(page_title="FinAI | Intelligence", page_icon="🏦", layout="
 # Custom UI Styling
 st.markdown("""
     <style>
-    /* Target the metric label (e.g., 'Ticker') */
-    [data-testid="stMetricLabel"] > div {
-        font-size: 0.8rem !important;
-        color: #6b7280 !important;
+    /* Metric Label (Smaller) */
+    [data-testid="stMetricLabel"] { 
+        font-size: 0.85rem !important; 
     }
     
-    /* Target the metric value (e.g., 'RELIANCE.NS') */
-    [data-testid="stMetricValue"] > div {
-        font-size: 1.1rem !important;
+    /* Metric Value (Allow Wrapping) */
+    [data-testid="stMetricValue"] > div { 
+        font-size: 1.1rem !important; 
         font-weight: 700 !important;
+        white-space: normal !important; /* Forces text to wrap */
+        word-break: break-word !important; /* Breaks long words if needed */
+        line-height: 1.2 !important;
     }
-
-    /* Styling for the risk boxes */
-    .risk-bullet {
-        background-color: #fff5f5;
-        padding: 12px;
-        border-radius: 8px;
-        border-left: 4px solid #9b2c2c;
-        margin-bottom: 10px;
-        font-size: 0.85rem;
-        color: #9b2c2c;
-        line-height: 1.4;
+    
+    /* Risk Bullet Styling */
+    .risk-bullet { 
+        background-color: #fff5f5; padding: 12px; border-radius: 8px; 
+        border-left: 4px solid #9b2c2c; margin-bottom: 10px; 
+        font-size: 0.85rem; color: #9b2c2c; line-height: 1.4; 
     }
     </style>
     """, unsafe_allow_html=True)
