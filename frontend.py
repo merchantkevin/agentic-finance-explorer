@@ -1,44 +1,30 @@
 import streamlit as st
+import yfinance as yf
 import requests
 import time
+from datetime import datetime
 
+# --- 1. PAGE CONFIGURATION ---
+# This sets the browser tab title and ensures the sidebar is visible/responsive.
 st.set_page_config(
     page_title="FinAI | Advisor", 
     page_icon="🏦", 
     layout="wide",
-    initial_sidebar_state="auto" # This helps mobile devices manage the sidebar better
+    initial_sidebar_state="auto"
 )
 
-# Helper function to split text into 4 clean bullets
-def get_risk_bullets(text):
-    # Split by common delimiters (periods, commas, or newlines)
-    raw_points = [p.strip() for p in text.replace('.', '\n').split('\n') if len(p) > 5]
-    # Ensure we show at least 4 points (fill with generic if AI is brief)
-    while len(raw_points) < 4:
-        raw_points.append("Monitoring secondary market volatility.")
-    return raw_points[:4]
-
-bullet_char = "\u2022"
-st.set_page_config(page_title="FinAI | Intelligence", page_icon="🏦", layout="wide")
-
-# Custom UI Styling
+# --- 2. CUSTOM STYLING (The "Make it Pretty" Section) ---
+# We use CSS to fix the metric text wrapping and style our Risk Audit cards.
 st.markdown("""
     <style>
-    /* Metric Label (Smaller) */
-    [data-testid="stMetricLabel"] { 
-        font-size: 0.85rem !important; 
-    }
-    
-    /* Metric Value (Allow Wrapping) */
+    /* Metric Value: Forces text to wrap so it doesn't get cut off on mobile */
     [data-testid="stMetricValue"] > div { 
-        font-size: 1.1rem !important; 
+        font-size: 1.2rem !important; 
         font-weight: 700 !important;
-        white-space: normal !important; /* Forces text to wrap */
-        word-break: break-word !important; /* Breaks long words if needed */
-        line-height: 1.2 !important;
+        white-space: normal !important; 
+        word-break: break-word !important; 
     }
-    
-    /* Risk Bullet Styling */
+    /* Risk Bullets: Custom red-bordered boxes for the Agent's risk audit */
     .risk-bullet { 
         background-color: #fff5f5; padding: 12px; border-radius: 8px; 
         border-left: 4px solid #9b2c2c; margin-bottom: 10px; 
@@ -47,71 +33,118 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🏛️ Financial Intelligence Committee")
-st.sidebar.header("Agent Controls")
+# --- 3. THE PRICE ENGINE ---
+# This function talks to Yahoo Finance. It's used by the sidebar to get live data.
+def get_current_price(ticker):
+    try:
+        stock = yf.Ticker(ticker)
+        # .fast_info is the high-speed way to get data without a full download
+        price = stock.fast_info['last_price']
+        currency = stock.fast_info['currency']
+        # We also get the 'previousClose' to calculate if the stock is Up or Down
+        prev_close = stock.info.get('previousClose', price)
+        change = price - prev_close
+        return price, currency, change
+    except:
+        return None, None, None
 
-# --- USER INPUT ---
-ticker = st.sidebar.text_input("NSE Ticker", value="RELIANCE").upper()
-if not ticker.endswith(".NS"): ticker += ".NS"
-analyze_btn = st.sidebar.button("Execute Strategic Analysis", use_container_width=True)
+# --- 4. THE LIVE HEARTBEAT (Fragment) ---
+# This is a "mini-app" that runs every 5 seconds without refreshing the whole page.
+@st.fragment(run_every=5)
+def live_price_sidebar(ticker_symbol):
+    price, currency, change = get_current_price(ticker_symbol)
+    if price:
+        # st.metric automatically handles the green/red coloring for 'delta'
+        st.metric(
+            label=f"Live Price: {ticker_symbol}", 
+            value=f"{currency} {price:.2f}",
+            delta=f"{change:.2f} Today"
+        )
 
-# --- CHANGE THIS TO YOUR ACTUAL RENDER URL ---
-API_URL = "https://agentic-finance-explorer.onrender.com" 
+# --- 5. MAIN UI LOGIC ---
+def main():
+    st.title("🏦 AI Financial Committee")
+    st.subheader("Multi-Agent Equity Research & Risk Audit")
 
-if analyze_btn:
-    with st.spinner(f"Agents are deliberating on {ticker}..."):
-        try:
-            # Step 1: Request Analysis
-            res = requests.post(f"{API_URL}/analyze", json={"ticker": ticker}, timeout=15)
-            
-            if res.status_code == 200:
-                data = res.json()
+    # --- SIDEBAR CONFIGURATION ---
+    with st.sidebar:
+        st.header("⚙️ Settings")
+        ticker = st.text_input("Stock Ticker", value="RELIANCE.NS").upper()
+        
+        # This button triggers the FastAPI backend
+        analyze_btn = st.button("🔍 Execute Analysis", use_container_width=True)
+        
+        # Spacing to push the live price to the very bottom
+        st.markdown("---")
+        if ticker:
+            # We call our "Heartbeat" fragment here
+            live_price_sidebar(ticker)
+
+    # --- ANALYSIS EXECUTION ---
+    if analyze_btn:
+        with st.status(f"Waking up agents for {ticker}...", expanded=True) as status:
+            try:
+                # 1. Send request to our FastAPI Backend (Render)
+                # Ensure this URL matches your Render deployment URL!
+                backend_url = "https://agentic-finance-explorer.onrender.com" 
+                response = requests.post(f"{backend_url}/analyze", json={"ticker": ticker})
                 
-                if data.get("status") == "completed":
-                    result = data.get("result")
+                if response.status_code == 200:
+                    job_id = response.json().get("job_id")
+                    
+                    # 2. Polling Logic: Keep asking the backend "Is it done?"
+                    while True:
+                        status.write("Committee is debating...")
+                        poll_res = requests.get(f"{backend_url}/status/{job_id}")
+                        data = poll_res.json()
+                        
+                        if data.get("status") == "completed":
+                            status.update(label="Analysis Complete!", state="complete", expanded=False)
+                            result = data.get("result")
+                            source = data.get("source", "Live Agents")
+                            break
+                        elif data.get("status") == "failed":
+                            st.error("Agents failed to reach consensus.")
+                            return
+                        
+                        time.sleep(5) # Wait 5 seconds before asking again
+
+                    # --- DISPLAY RESULTS ---
+                    # Show the Intelligence Source (Live vs SQL Cache)
+                    if "Intelligence" in source:
+                        st.info(f"📁 Source: {source} (Price Stable)")
+                    else:
+                        st.success(f"🟢 Source: {source}")
+
+                    # Layout: 3 Columns for the Main Metrics
+                    m1, m2, m3 = st.columns(3)
+                    with m1:
+                        st.metric("Technical Signal", result.get('technical_signal', 'N/A'))
+                    with m2:
+                        st.metric("Sentiment Score", f"{result.get('sentiment_score', 0)}/10")
+                    with m3:
+                        st.metric("Recommendation", result.get('recommendation', 'N/A'))
+
+                    # Layout: 2 Columns for detailed Summary and Risk Audit
+                    col_main, col_side = st.columns([2, 1])
+                    
+                    with col_main:
+                        st.markdown("### 📝 Executive Summary")
+                        st.write(result.get('risk_summary', 'No summary available.'))
+                        
+                    with col_side:
+                        st.markdown("### 🛡️ Risk Audit")
+                        # Split the risk text into individual bullets (using '.' as a separator)
+                        raw_risks = result.get('risk_summary', '').split('.')
+                        # Show only the first 4 significant points
+                        clean_risks = [r.strip() for r in raw_risks if len(r) > 10][:4]
+                        for r in clean_risks:
+                            st.markdown(f'<div class="risk-bullet">⚠️ {r}</div>', unsafe_allow_html=True)
+                
                 else:
-                    job_id = data.get("job_id")
-                    # Step 2: Polling
-                    with st.status("🔍 Agents investigating technicals and news...") as status:
-                        while True:
-                            status_res = requests.get(f"{API_URL}/status/{job_id}").json()
-                            if status_res.get("status") == "completed":
-                                result = status_res.get("result")
-                                status.update(label="Analysis Complete!", state="complete")
-                                break
-                            elif status_res.get("status") == "failed":
-                                st.error("Agents failed to reach a consensus.")
-                                st.stop()
-                            time.sleep(5)
+                    st.error("Backend Handshake Failed. Check Render URL.")
+            except Exception as e:
+                st.error(f"System Error: {str(e)}")
 
-                # --- DISPLAY ---
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Ticker", ticker)
-                st.caption(f"Source: {data.get('source', 'Live Agent Analysis')}")
-                col2.metric("Signal", result.get('technical_signal', 'N/A'))
-                col3.metric("Sentiment", f"{result.get('sentiment_score', 0)}/10")
-
-                st.markdown("---")
-                c_main, c_side = st.columns([2, 1])
-
-                with c_main:
-                    st.markdown(f"""<div class='report-card'><h4>💡 Recommendation</h4><p>{result.get('recommendation', 'No data available.')}</p></div>""", unsafe_allow_html=True)
-
-                with c_side:
-                    st.markdown("#### 🛡️ Risk Audit")
-                    risks = get_risk_bullets(result.get('risk_summary', ''))
-                    for point in risks:
-                        st.markdown(f"""
-                            <div style="background-color: #fff5f5; padding: 10px; border-radius: 8px; 
-                            border-left: 4px solid #9b2c2c; margin-bottom: 8px; font-size: 0.85rem; color: #9b2c2c;">
-                            {bullet_char} {point}
-                            </div>
-                            """, unsafe_allow_html=True)
-            else:
-                st.error(f"Server Error: {res.status_code}. Check Render logs.")
-
-        except Exception as e:
-            st.error(f"Handshake Failed: {e}. Check if Render URL is correct.")
-
-else:
-    st.info("Enter a ticker in the sidebar to begin.")
+if __name__ == "__main__":
+    main()
