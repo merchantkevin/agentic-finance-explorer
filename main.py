@@ -17,7 +17,7 @@ load_dotenv()
 def run_financial_analysis(ticker: str):
     # 1. Tools & LLM Setup
     search_tool = SerperDevTool()
-    my_llm = LLM(model="openai/gpt-4o-mini", api_key=os.getenv("OPENAI_API_KEY"))
+    my_llm = LLM(model="openai/gpt-4o-mini", api_key=os.getenv("OPENAI_API_KEY"), temperature=0)
 
     # 2. Define Agents
     quant_analyst = Agent(

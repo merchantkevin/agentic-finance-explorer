@@ -87,6 +87,7 @@ if analyze_btn:
                 # --- DISPLAY ---
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Ticker", ticker)
+                st.caption(f"Source: {data.get('source', 'Live Agent Analysis')}")
                 col2.metric("Signal", result.get('technical_signal', 'N/A'))
                 col3.metric("Sentiment", f"{result.get('sentiment_score', 0)}/10")
 
