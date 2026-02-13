@@ -98,7 +98,7 @@ def main():
                 response = requests.post(f"{backend_url}/analyze", json={"ticker": ticker})
                 
                 if response.status_code == 200:
-                    job_id = response.json().get("job_id")
+                    data = response.json()
 
                     # Check if it was served instantly from SQL
                     if data.get("status") == "completed":
