@@ -10,6 +10,20 @@ import sqlite3
 import yfinance as yf
 from datetime import datetime, timedelta
 
+def save_to_db(ticker, price, data_dict):
+    """Saves a fresh analysis into our 'Verified Intelligence' cabinet."""
+    conn = sqlite3.connect('market_data.db')
+    c = conn.cursor()
+    
+    # We use 'REPLACE' so that if HDFCBank already exists, we update it 
+    # with the newest intelligence instead of making a duplicate.
+    c.execute("""REPLACE INTO reports (ticker, price, timestamp, data) 
+                 VALUES (?, ?, ?, ?)""", 
+              (ticker, price, datetime.now().isoformat(), json.dumps(data_dict)))
+    
+    conn.commit()
+    conn.close()
+
 # Create the cabinet if it doesn't exist
 def init_db():
     conn = sqlite3.connect('market_data.db')
@@ -65,8 +79,8 @@ async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundT
         last_run = datetime.fromisoformat(old_time)
         
         # If price moved < 1% AND it was less than 2 hours ago:
-        if price_change < 0.01 and (datetime.now() - last_run) < timedelta(hours=2):
-            return {"status": "completed", "result": json.loads(saved_data), "source": "cache"}
+        if price_change < 0.01 and (datetime.now() - last_run) < timedelta(hours=1):
+            return {"status": "completed", "result": json.loads(saved_data), "source": "Verified Intelligence"}
 
     # 3. If price moved too much or cabinet is empty, run Agents...
     cache_file = get_cache_filename(ticker)
@@ -94,13 +108,13 @@ async def get_status(job_id: str):
 
 def execute_analysis(job_id: str, ticker: str):
     try:
+        # 1. Run the AI Agents
         output = run_financial_analysis(ticker)
         
-        # CrewAI returns a CrewOutput. We need the JSON dict.
+        # 2. Extract the data safely (Your existing logic)
         if hasattr(output, 'json_dict') and output.json_dict:
             analysis_data = output.json_dict
         else:
-            # Fallback if AI fails to format JSON correctly
             analysis_data = {
                 "ticker": ticker,
                 "technical_signal": "Analysis Incomplete",
@@ -109,10 +123,24 @@ def execute_analysis(job_id: str, ticker: str):
                 "recommendation": "Agent returned unstructured text. Review manually."
             }
 
-        cache_data = {"timestamp": datetime.now().isoformat(), "result": analysis_data}
-        with open(get_cache_filename(ticker), "w") as f:
-            json.dump(cache_data, f)
-            
-        results_db[job_id] = {"status": "completed", "result": analysis_data}
+        # 3. GET THE LIVE PRICE (Crucial for the Smart Librarian)
+        try:
+            stock = yf.Ticker(ticker)
+            # Use fast_info to get the price quickly
+            current_price = stock.fast_info['last_price']
+        except:
+            current_price = 0.0  # Fallback if price fetch fails
+
+        # 4. SAVE TO SQL FILING CABINET (Instead of the old JSON file)
+        # We pass the ticker, price, and the analysis data
+        save_to_db(ticker, current_price, analysis_data)
+        
+        # 5. Send back to Streamlit with the new 'Source' label
+        results_db[job_id] = {
+            "status": "completed", 
+            "result": analysis_data,
+            "source": "Live Agent Analysis"
+        }
+        
     except Exception as e:
         results_db[job_id] = {"status": "failed", "error": str(e)}
