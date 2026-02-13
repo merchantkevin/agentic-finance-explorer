@@ -24,14 +24,22 @@ def save_to_db(ticker, price, data_dict):
     conn.commit()
     conn.close()
 
+# This ensures the DB is created in the current working directory safely
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "market_data.db")
 # Create the cabinet if it doesn't exist
 def init_db():
-    conn = sqlite3.connect('market_data.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS reports 
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS reports 
                  (ticker TEXT PRIMARY KEY, price REAL, timestamp TEXT, data TEXT)''')
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
+        print("DB initialized successfully")
+    except Exception as e:
+        print(f"DB Initialization Error: {e}")
+
 
 init_db() # Run this once when the app starts
 
@@ -61,6 +69,7 @@ def home():
 @app.post("/analyze")
 async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundTasks):
     ticker = request.ticker.upper()
+    job_id = str(uuid.uuid4())
     
     # 1. Get Live Price
     stock = yf.Ticker(ticker)
