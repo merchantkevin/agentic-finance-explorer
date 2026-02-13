@@ -38,14 +38,22 @@ st.markdown("""
 def get_current_price(ticker):
     try:
         stock = yf.Ticker(ticker)
-        # .fast_info is the high-speed way to get data without a full download
+        # Use fast_info - it is much more stable and avoids the 'currentTradingPeriod' bug
         price = stock.fast_info['last_price']
         currency = stock.fast_info['currency']
-        # We also get the 'previousClose' to calculate if the stock is Up or Down
-        prev_close = stock.info.get('previousClose', price)
-        change = price - prev_close
+        
+        # Instead of .info['previousClose'], we use .history to get the last closing price
+        # This is slightly slower but 100% stable
+        hist = stock.history(period="2d")
+        if len(hist) > 1:
+            prev_close = hist['Close'].iloc[-2]
+            change = price - prev_close
+        else:
+            change = 0.0
+            
         return price, currency, change
-    except:
+    except Exception as e:
+        print(f"YFinance Error: {e}")
         return None, None, None
 
 # --- 4. THE LIVE HEARTBEAT (Fragment) ---
