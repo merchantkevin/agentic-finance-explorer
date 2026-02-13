@@ -99,23 +99,54 @@ def main():
                 
                 if response.status_code == 200:
                     job_id = response.json().get("job_id")
+
+                    # Check if it was served instantly from SQL
+                if data.get("status") == "completed":
+                    result = data.get("result")
+                    source = data.get("source")
+                    # Jump straight to display
+                else:
+                    job_id = data.get("job_id")
+                    status_placeholder = st.empty() # The single slot for messages
                     
-                    # 2. Polling Logic: Keep asking the backend "Is it done?"
-                    while True:
-                        status.write("Committee is debating...")
+                    # --- THE LOOP FIX ---
+                    max_attempts = 20 # 20 attempts * 5 seconds = 100 seconds (max wait)
+                    attempts = 0
+                    
+                    while attempts < max_attempts:
                         poll_res = requests.get(f"{backend_url}/status/{job_id}")
-                        data = poll_res.json()
                         
-                        if data.get("status") == "completed":
-                            status.update(label="Analysis Complete!", state="complete", expanded=False)
-                            result = data.get("result")
-                            source = data.get("source", "Live Agents")
+                        # If the backend is down or errors out
+                        if poll_res.status_code != 200:
+                            status_placeholder.error("Backend lost connection.")
                             break
-                        elif data.get("status") == "failed":
-                            st.error("Agents failed to reach consensus.")
+                            
+                        poll_data = poll_res.json()
+                        current_status = poll_data.get("status")
+
+                        if current_status == "completed":
+                            result = poll_data.get("result")
+                            source = "Live Agent Analysis"
+                            status_placeholder.empty()
+                            break # Success!
+                        
+                        elif current_status == "failed":
+                            status_placeholder.error(f"Analysis failed: {poll_data.get('error')}")
                             return
                         
-                        time.sleep(5) # Wait 5 seconds before asking again
+                        elif current_status == "not_found":
+                            status_placeholder.warning("Job lost by server. Restarting...")
+                            break # Break and let the user try again
+
+                        # If it's still "pending" or "started"
+                        status_placeholder.info(f"🕵️ Committee is debating... (Step {attempts+1}/{max_attempts})")
+                        
+                        time.sleep(5)
+                        attempts += 1
+                    
+                    if attempts >= max_attempts:
+                        status_placeholder.error("The committee is taking too long. Please try again.")
+                        return
 
                     # --- DISPLAY RESULTS ---
                     # Show the Intelligence Source (Live vs SQL Cache)
