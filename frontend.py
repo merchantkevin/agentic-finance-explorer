@@ -54,65 +54,70 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. THE PRICE ENGINE (Google Finance - India Focused) ---
+# --- 3. THE PRICE ENGINE (Groww JSON API + Google Fallback) ---
 def get_current_price(ticker):
     """
-    Scrapes live price and currency directly from Google Finance.
-    Strictly targets Indian Exchanges (NSE, then BSE/BOM).
+    Zero-Yahoo Price Engine.
+    Primary: Groww's Native Indian Market JSON API.
+    Fallback: Google Finance DOM attribute extraction.
     """
-    # 1. Clean the ticker (remove Yahoo suffixes if the user typed them)
+    # Clean the ticker so it works for the Indian APIs
     clean_ticker = ticker.upper().replace('.NS', '').replace('.BO', '').strip()
-    
-    # We will try NSE first, then BOM (Bombay Stock Exchange)
-    exchanges = ['NSE', 'BOM']
+    exchange = "BSE" if ".BO" in ticker.upper() else "NSE"
     
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
+        'Accept': 'application/json'
     }
 
-    for exchange in exchanges:
-        symbol = f"{clean_ticker}:{exchange}"
-        url = f"https://www.google.com/finance/quote/{symbol}"
+    # ---------------------------------------------------------
+    # ATTEMPT 1: Groww JSON API (Fastest & Native for India)
+    # ---------------------------------------------------------
+    try:
+        url = f"https://groww.in/v1/api/stocks_data/v1/tr_live_prices/exchange/{exchange}/segment/CASH/{clean_ticker}/latest"
+        res = requests.get(url, headers=headers, timeout=5)
         
-        try:
-            res = requests.get(url, headers=headers, timeout=5)
-            if res.status_code != 200:
-                continue # If not found on NSE, loop will try BOM next
-                
-            soup = BeautifulSoup(res.text, 'html.parser')
+        if res.status_code == 200:
+            data = res.json()
+            # Groww provides clean Last Traded Price (ltp) and Previous Close (close)
+            price = float(data.get('ltp', 0.0))
+            prev_close = float(data.get('close', 0.0))
             
-            # The specific HTML class Google uses for the main stock price
-            price_div = soup.find('div', class_='YMlKec fxKbKc')
-            
-            if price_div:
-                price_text = price_div.text.strip()
-                
-                # 2. Separate the currency symbol from the numbers
-                match = re.match(r"([^\d\.,]+)?([\d\.,]+)", price_text)
-                if match:
-                    currency = match.group(1) or "₹"
-                    price_str = match.group(2).replace(',', '')
-                    price = float(price_str)
-                    
-                    # 3. Grab the daily change
-                    change = 0.0
-                    change_div = soup.find('div', class_='JwB6zf')
-                    if change_div:
-                        change_text = change_div.text.strip().replace(',', '')                        
-                        # [THE FIX] Added the Unicode minus sign '−' to the search criteria
-                        c_match = re.search(r"([+\-−])?[^\d\.,]*([\d\.,]+)", change_text)
-                        if c_match:
-                            # If it matches either a standard hyphen or unicode minus, set to -1
-                            sign = -1 if c_match.group(1) in ['-', '−'] else 1
-                            change = sign * float(c_match.group(2))
-                            
-                    is_weekend = datetime.now().weekday() >= 5
-                    return price, currency.strip(), change, is_weekend
-                    
-        except Exception as e:
-            print(f"Scraper error for {symbol}: {e}")
+            if price > 0:
+                change = price - prev_close
+                is_weekend = datetime.now().weekday() >= 5
+                return price, "₹", change, is_weekend
+    except Exception as e:
+        print(f"Groww API Error: {e}")
 
-    # Complete Failure (Stock not found on NSE or BSE, or network error)
+    # ---------------------------------------------------------
+    # ATTEMPT 2: Google Finance (Bulletproof DOM Scraper)
+    # ---------------------------------------------------------
+    try:
+        # If Groww fails, we fallback to Google, but we IGNORE the changing CSS classes
+        url = f"https://www.google.com/finance/quote/{clean_ticker}:{exchange}"
+        res = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        
+        # We look for Google's internal mathematical data attributes instead
+        price_div = soup.find('div', {'data-last-price': True})
+        
+        if price_div:
+            price = float(price_div['data-last-price'])
+            is_weekend = datetime.now().weekday() >= 5
+            
+            # Try to find previous close to calculate the difference
+            change = 0.0
+            prev_close_div = soup.find('div', {'data-previous-close': True})
+            if prev_close_div:
+                prev_close = float(prev_close_div['data-previous-close'])
+                change = price - prev_close
+                
+            return price, "₹", change, is_weekend
+    except Exception as e:
+        print(f"Google Finance Fallback Error: {e}")
+
+    # Complete Failure
     return None, None, None, False
 
 # --- 4. THE LIVE HEARTBEAT ---
