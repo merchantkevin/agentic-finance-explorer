@@ -4,6 +4,7 @@ import requests
 import time
 from datetime import datetime
 from bs4 import BeautifulSoup
+import re
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
@@ -48,68 +49,69 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. IRONCLAD PRICE ENGINE (API + Scraping Fallback + Currency Routing) ---
+# --- 3. THE PRICE ENGINE (Google Finance Only) ---
 def get_current_price(ticker):
-    # Helper to clean up currency display
-    def format_currency(curr):
-        if curr == "INR": return "₹"
-        if curr == "USD": return "$"
-        if curr == "EUR": return "€"
-        if curr == "GBP": return "£"
-        return curr + " "
+    """
+    Scrapes live price and currency directly from Google Finance.
+    Bypasses all Yahoo APIs completely.
+    """
+    # 1. Translate Yahoo tickers to Google Finance format
+    ticker = ticker.upper()
+    if ticker.endswith('.NS'):
+        symbol = ticker.replace('.NS', ':NSE')
+    elif ticker.endswith('.BO'):
+        symbol = ticker.replace('.BO', ':BOM')
+    else:
+        # Default to NASDAQ for US stocks. We check NYSE if NASDAQ fails.
+        symbol = f"{ticker}:NASDAQ"
 
-    # Helper to guess currency based on ticker suffix if API fails
-    def guess_currency(t):
-        if t.endswith('.NS') or t.endswith('.BO'): return "₹"
-        if t.endswith('.L'): return "£"
-        if t.endswith('.DE') or t.endswith('.PA'): return "€"
-        if t.endswith('.TO'): return "CAD $"
-        return "$" # Default to USD for standard US tickers (AAPL, TSLA)
+    url = f"https://www.google.com/finance/quote/{symbol}"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
 
-    # ATTEMPT 1: The standard yfinance API
     try:
-        stock = yf.Ticker(ticker)
-        
-        if hasattr(stock.fast_info, 'last_price'):
-            price = stock.fast_info.last_price
-            currency = format_currency(stock.fast_info.currency)
-        else:
-            price = stock.info.get('currentPrice', stock.info.get('previousClose'))
-            currency = format_currency(stock.info.get('currency', 'USD'))
-            
-        if price:
-            hist = stock.history(period="5d")
-            change = price - hist['Close'].iloc[-2] if len(hist) >= 2 else 0.0
-            is_weekend = datetime.now().weekday() >= 5
-            return price, currency, change, is_weekend
-    except Exception:
-        pass # If yfinance fails, silently move to the fallback
-
-    # ATTEMPT 2: Web Scraping Fallback
-    try:
-        url = f"https://finance.yahoo.com/quote/{ticker}"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
         res = requests.get(url, headers=headers, timeout=5)
         soup = BeautifulSoup(res.text, 'html.parser')
-        
-        # Search the HTML for the specific live price tag
-        price_tag = soup.find('fin-streamer', {'data-symbol': ticker.upper(), 'data-field': 'regularMarketPrice'})
-        
-        if price_tag and price_tag.text:
-            price = float(price_tag.text.replace(',', ''))
-            is_weekend = datetime.now().weekday() >= 5
-            
-            # Use our router to guess the currency instead of hardcoding "USD"
-            guessed_currency = guess_currency(ticker.upper())
-            
-            return price, guessed_currency, 0.0, is_weekend
-            
-    except Exception as e:
-        print(f"Fallback Scraper Error: {e}")
 
-    # ATTEMPT 3: Complete Failure
+        # The specific HTML class Google uses for the main stock price
+        price_div = soup.find('div', class_='YMlKec fxKbKc')
+
+        # If it failed to find NASDAQ, try NYSE (for US stocks like JPM or V)
+        if not price_div and ":NASDAQ" in symbol:
+            symbol = symbol.replace(':NASDAQ', ':NYSE')
+            url = f"https://www.google.com/finance/quote/{symbol}"
+            res = requests.get(url, headers=headers, timeout=5)
+            soup = BeautifulSoup(res.text, 'html.parser')
+            price_div = soup.find('div', class_='YMlKec fxKbKc')
+
+        if price_div:
+            price_text = price_div.text.strip() # e.g., "₹2,957.20" or "$150.00"
+
+            # 2. Separate the currency symbol from the numbers using Regex
+            match = re.match(r"([^\d\.,]+)?([\d\.,]+)", price_text)
+            if match:
+                currency = match.group(1) or "$"
+                price_str = match.group(2).replace(',', '')
+                price = float(price_str)
+
+                # 3. Grab the daily change (Google class: "JwB6zf")
+                change = 0.0
+                change_div = soup.find('div', class_='JwB6zf')
+                if change_div:
+                    change_text = change_div.text.strip().replace(',', '')
+                    c_match = re.search(r"([+-])?[^\d\.,]*([\d\.,]+)", change_text)
+                    if c_match:
+                        sign = -1 if c_match.group(1) == '-' else 1
+                        change = sign * float(c_match.group(2))
+
+                is_weekend = datetime.now().weekday() >= 5
+                return price, currency.strip(), change, is_weekend
+
+    except Exception as e:
+        print(f"Google Finance Error: {e}")
+
+    # Complete Failure
     return None, None, None, False
 
 # --- 4. THE LIVE HEARTBEAT ---
