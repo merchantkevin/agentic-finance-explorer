@@ -3,14 +3,15 @@ from dotenv import load_dotenv
 from crewai import Agent, Task, Crew, LLM
 from crewai_tools import SerperDevTool
 from tools import stock_price_analyzer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import List
 
-class StockAnalysis(BaseModel):
-    ticker: str
-    technical_signal: str
-    sentiment_score: float
-    risk_summary: str
-    recommendation: str
+class FinancialAnalysisOutput(BaseModel):
+    ticker: str = Field(description="The stock ticker symbol analyzed")
+    technical_signal: str = Field(description="Overall technical trend: 'Bullish', 'Bearish', or 'Neutral'")
+    sentiment_score: float = Field(description="Market sentiment score from 1.0 (Extreme Fear/Bearish) to 10.0 (Extreme Greed/Bullish)")
+    key_catalysts: List[str] = Field(description="Exactly 3 bullet points highlighting upcoming events, positive news, or fundamental strengths driving the stock.")
+    risk_summary: List[str] = Field(description="Exactly 4 bullet points highlighting critical risks, bearish technicals, or fundamental weaknesses.")
 
 load_dotenv()
 
@@ -67,12 +68,12 @@ def run_financial_analysis(ticker: str):
     
     risk_task = Task(
                     description="""Analyze risks for {ticker} based on tech and news. 
-                    Provide a sentiment_score between 0 and 10 (where 0 is extreme panic and 10 is euphoria).
+                    Provide a sentiment_score, strictly between 0 and 10 (where 0 is extreme panic and 10 is euphoria).
                     Ensure all fields in the JSON are filled accurately.""", 
                     expected_output='A structured JSON object with analysis and risk summary.', 
                     agent=risk_manager, 
                     context=[tech_task, news_task],
-                    output_json=StockAnalysis
+                    output_json=FinancialAnalysisOutput
                     )
 
     # 4. Assemble & Execute
