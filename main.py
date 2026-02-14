@@ -34,8 +34,8 @@ def run_financial_analysis(ticker: str):
         role='Financial News Correspondent',
         goal=f'Identify major news catalysts for {ticker}',
         backstory="""You are an expert financial journalist in India. 
-        You scan news from Moneycontrol, ET, and Mint to find sentiment. 
-        You look for earnings, scandals, or regulatory news.""",
+        You scan news from Moneycontrol, Economic Times, and Livemint to find sentiment. 
+        You look for earnings, scandals and regulatory news.""",
         tools=[search_tool],
         llm=my_llm,
         verbose=True
