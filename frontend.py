@@ -49,69 +49,63 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. THE PRICE ENGINE (Google Finance Only) ---
+# --- 3. THE PRICE ENGINE (Google Finance - India Focused) ---
 def get_current_price(ticker):
     """
     Scrapes live price and currency directly from Google Finance.
-    Bypasses all Yahoo APIs completely.
+    Strictly targets Indian Exchanges (NSE, then BSE/BOM).
     """
-    # 1. Translate Yahoo tickers to Google Finance format
-    ticker = ticker.upper()
-    if ticker.endswith('.NS'):
-        symbol = ticker.replace('.NS', ':NSE')
-    elif ticker.endswith('.BO'):
-        symbol = ticker.replace('.BO', ':BOM')
-    else:
-        # Default to NASDAQ for US stocks. We check NYSE if NASDAQ fails.
-        symbol = f"{ticker}:NASDAQ"
-
-    url = f"https://www.google.com/finance/quote/{symbol}"
+    # 1. Clean the ticker (remove Yahoo suffixes if the user typed them)
+    clean_ticker = ticker.upper().replace('.NS', '').replace('.BO', '').strip()
+    
+    # We will try NSE first, then BOM (Bombay Stock Exchange)
+    exchanges = ['NSE', 'BOM']
+    
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
 
-    try:
-        res = requests.get(url, headers=headers, timeout=5)
-        soup = BeautifulSoup(res.text, 'html.parser')
-
-        # The specific HTML class Google uses for the main stock price
-        price_div = soup.find('div', class_='YMlKec fxKbKc')
-
-        # If it failed to find NASDAQ, try NYSE (for US stocks like JPM or V)
-        if not price_div and ":NASDAQ" in symbol:
-            symbol = symbol.replace(':NASDAQ', ':NYSE')
-            url = f"https://www.google.com/finance/quote/{symbol}"
+    for exchange in exchanges:
+        symbol = f"{clean_ticker}:{exchange}"
+        url = f"https://www.google.com/finance/quote/{symbol}"
+        
+        try:
             res = requests.get(url, headers=headers, timeout=5)
+            if res.status_code != 200:
+                continue # If not found on NSE, loop will try BOM next
+                
             soup = BeautifulSoup(res.text, 'html.parser')
+            
+            # The specific HTML class Google uses for the main stock price
             price_div = soup.find('div', class_='YMlKec fxKbKc')
+            
+            if price_div:
+                price_text = price_div.text.strip()
+                
+                # 2. Separate the currency symbol from the numbers
+                match = re.match(r"([^\d\.,]+)?([\d\.,]+)", price_text)
+                if match:
+                    currency = match.group(1) or "₹"
+                    price_str = match.group(2).replace(',', '')
+                    price = float(price_str)
+                    
+                    # 3. Grab the daily change
+                    change = 0.0
+                    change_div = soup.find('div', class_='JwB6zf')
+                    if change_div:
+                        change_text = change_div.text.strip().replace(',', '')
+                        c_match = re.search(r"([+-])?[^\d\.,]*([\d\.,]+)", change_text)
+                        if c_match:
+                            sign = -1 if c_match.group(1) == '-' else 1
+                            change = sign * float(c_match.group(2))
+                            
+                    is_weekend = datetime.now().weekday() >= 5
+                    return price, currency.strip(), change, is_weekend
+                    
+        except Exception as e:
+            print(f"Scraper error for {symbol}: {e}")
 
-        if price_div:
-            price_text = price_div.text.strip() # e.g., "₹2,957.20" or "$150.00"
-
-            # 2. Separate the currency symbol from the numbers using Regex
-            match = re.match(r"([^\d\.,]+)?([\d\.,]+)", price_text)
-            if match:
-                currency = match.group(1) or "$"
-                price_str = match.group(2).replace(',', '')
-                price = float(price_str)
-
-                # 3. Grab the daily change (Google class: "JwB6zf")
-                change = 0.0
-                change_div = soup.find('div', class_='JwB6zf')
-                if change_div:
-                    change_text = change_div.text.strip().replace(',', '')
-                    c_match = re.search(r"([+-])?[^\d\.,]*([\d\.,]+)", change_text)
-                    if c_match:
-                        sign = -1 if c_match.group(1) == '-' else 1
-                        change = sign * float(c_match.group(2))
-
-                is_weekend = datetime.now().weekday() >= 5
-                return price, currency.strip(), change, is_weekend
-
-    except Exception as e:
-        print(f"Google Finance Error: {e}")
-
-    # Complete Failure
+    # Complete Failure (Stock not found on NSE or BSE, or network error)
     return None, None, None, False
 
 # --- 4. THE LIVE HEARTBEAT ---
