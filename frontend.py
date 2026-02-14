@@ -3,6 +3,7 @@ import yfinance as yf
 import requests
 import time
 from datetime import datetime
+from bs4 import BeautifulSoup
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
@@ -47,31 +48,69 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. PRICE ENGINE ---
+# --- 3. IRONCLAD PRICE ENGINE (API + Scraping Fallback + Currency Routing) ---
 def get_current_price(ticker):
+    # Helper to clean up currency display
+    def format_currency(curr):
+        if curr == "INR": return "₹"
+        if curr == "USD": return "$"
+        if curr == "EUR": return "€"
+        if curr == "GBP": return "£"
+        return curr + " "
+
+    # Helper to guess currency based on ticker suffix if API fails
+    def guess_currency(t):
+        if t.endswith('.NS') or t.endswith('.BO'): return "₹"
+        if t.endswith('.L'): return "£"
+        if t.endswith('.DE') or t.endswith('.PA'): return "€"
+        if t.endswith('.TO'): return "CAD $"
+        return "$" # Default to USD for standard US tickers (AAPL, TSLA)
+
+    # ATTEMPT 1: The standard yfinance API
     try:
         stock = yf.Ticker(ticker)
         
         if hasattr(stock.fast_info, 'last_price'):
             price = stock.fast_info.last_price
-            currency = stock.fast_info.currency
+            currency = format_currency(stock.fast_info.currency)
         else:
             price = stock.info.get('currentPrice', stock.info.get('previousClose'))
-            currency = stock.info.get('currency', 'USD')
+            currency = format_currency(stock.info.get('currency', 'USD'))
             
-        if not price: return None, None, None, False
+        if price:
+            hist = stock.history(period="5d")
+            change = price - hist['Close'].iloc[-2] if len(hist) >= 2 else 0.0
+            is_weekend = datetime.now().weekday() >= 5
+            return price, currency, change, is_weekend
+    except Exception:
+        pass # If yfinance fails, silently move to the fallback
+
+    # ATTEMPT 2: Web Scraping Fallback
+    try:
+        url = f"https://finance.yahoo.com/quote/{ticker}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        res = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(res.text, 'html.parser')
         
-        hist = stock.history(period="5d")
-        if len(hist) >= 2:
-            prev_close = hist['Close'].iloc[-2]
-            change = price - prev_close
-        else:
-            change = 0.0
+        # Search the HTML for the specific live price tag
+        price_tag = soup.find('fin-streamer', {'data-symbol': ticker.upper(), 'data-field': 'regularMarketPrice'})
+        
+        if price_tag and price_tag.text:
+            price = float(price_tag.text.replace(',', ''))
+            is_weekend = datetime.now().weekday() >= 5
             
-        is_weekend = datetime.now().weekday() >= 5
-        return price, currency, change, is_weekend
+            # Use our router to guess the currency instead of hardcoding "USD"
+            guessed_currency = guess_currency(ticker.upper())
+            
+            return price, guessed_currency, 0.0, is_weekend
+            
     except Exception as e:
-        return None, None, None, False
+        print(f"Fallback Scraper Error: {e}")
+
+    # ATTEMPT 3: Complete Failure
+    return None, None, None, False
 
 # --- 4. THE LIVE HEARTBEAT ---
 @st.fragment(run_every=10) 

@@ -11,7 +11,7 @@ class FinancialAnalysisOutput(BaseModel):
     technical_signal: str = Field(description="Overall technical trend: 'Bullish', 'Bearish', or 'Neutral'")
     sentiment_score: float = Field(description="Market sentiment score from 1.0 (Extreme Fear/Bearish) to 10.0 (Extreme Greed/Bullish)")
     key_catalysts: List[str] = Field(description="Exactly 3 bullet points highlighting upcoming events, positive news, or fundamental strengths driving the stock.")
-    risk_summary: List[str] = Field(description="Exactly 4 bullet points highlighting critical risks, bearish technicals, or fundamental weaknesses.")
+    risk_summary: List[str] = Field(description="Exactly 3 bullet points highlighting critical risks, bearish technicals, or fundamental weaknesses.")
 
 load_dotenv()
 
