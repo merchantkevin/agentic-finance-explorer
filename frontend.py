@@ -17,6 +17,11 @@ st.set_page_config(
 # --- 2. CUSTOM STYLING ---
 st.markdown("""
     <style>
+    /* Hides the "Press Enter to apply" text in the text box */
+    [data-testid="InputInstructions"] { 
+        display: none !important; 
+    }
+    
     /* Metric Value Styling */
     [data-testid="stMetricValue"] > div { 
         font-size: 1.2rem !important; 
@@ -93,10 +98,12 @@ def get_current_price(ticker):
                     change = 0.0
                     change_div = soup.find('div', class_='JwB6zf')
                     if change_div:
-                        change_text = change_div.text.strip().replace(',', '')
-                        c_match = re.search(r"([+-])?[^\d\.,]*([\d\.,]+)", change_text)
+                        change_text = change_div.text.strip().replace(',', '')                        
+                        # [THE FIX] Added the Unicode minus sign '−' to the search criteria
+                        c_match = re.search(r"([+\-−])?[^\d\.,]*([\d\.,]+)", change_text)
                         if c_match:
-                            sign = -1 if c_match.group(1) == '-' else 1
+                            # If it matches either a standard hyphen or unicode minus, set to -1
+                            sign = -1 if c_match.group(1) in ['-', '−'] else 1
                             change = sign * float(c_match.group(2))
                             
                     is_weekend = datetime.now().weekday() >= 5
@@ -133,14 +140,14 @@ if "current_ticker" not in st.session_state: st.session_state.current_ticker = N
 
 # --- 6. MAIN UI LOGIC ---
 def main():
-    st.title("🔬 AI Equity Research Assistant")
+    st.title("🔬 AI Investment Research Assistant")
     st.subheader("Autonomous Information Synthesis & Risk Highlighting")
 
     with st.sidebar:
-        st.header("⚙️ Settings")
+        #st.header("⚙️ Settings")
         ticker = st.text_input("Stock Ticker", value="RELIANCE.NS").upper()
         
-        if st.button("🔍 Synthesize Data", use_container_width=True):
+        if st.button("🔍 Analyse Data", use_container_width=True):
             st.session_state.is_analyzing = True
             st.session_state.analysis_results = None 
             st.session_state.current_ticker = ticker
@@ -195,7 +202,7 @@ def main():
                                     st.session_state.is_analyzing = False
                                     break
                                 
-                                status_box.update(label=f"🕵️ Interns are compiling reports... (Step {attempts+1}/{max_attempts})", state="running")
+                                status_box.update(label=f"🕵️ Agents are compiling reports... (Step {attempts+1}/{max_attempts})", state="running")
                                 time.sleep(5)
                                 attempts += 1
                             
@@ -240,7 +247,7 @@ def main():
             col_bull, col_bear = st.columns(2)
             
             with col_bull:
-                st.markdown("### 📈 Key Catalysts (Bull Case)")
+                st.markdown("### 📈 Key Catalysts")
                 catalysts = result.get('key_catalysts', [])
                 if isinstance(catalysts, list) and catalysts:
                     for c in catalysts:
@@ -249,7 +256,7 @@ def main():
                     st.write("No positive catalysts identified.")
                 
             with col_bear:
-                st.markdown("### 🛡️ Risk Audit (Bear Case)")
+                st.markdown("### 🛡️ Risk Audit")
                 risks = result.get('risk_summary', [])
                 if isinstance(risks, list) and risks:
                     for r in risks:
