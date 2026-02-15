@@ -51,7 +51,7 @@ def get_current_price(ticker):
     ticker_upper = ticker.upper().strip()
     
     # 1. Clean the ticker (remove all suffixes)
-    clean_ticker = ticker_upper.replace('.NS', '').replace('.BO', '').replace('.BSE', '').strip()
+    clean_ticker = ticker_upper.replace('.NS', '').replace('.NSE', '').replace('.BO', '').replace('.BSE', '').strip()
     
     # 2. The Smart Router: BSE strictly requires 6-digit Scrip Codes (e.g. 500325)
     # If the ticker contains letters (e.g. RELIANCE), we MUST route to NSE. 
