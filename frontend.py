@@ -173,12 +173,16 @@ if "is_analyzing" not in st.session_state: st.session_state.is_analyzing = False
 if "analysis_results" not in st.session_state: st.session_state.analysis_results = None
 if "analysis_source" not in st.session_state: st.session_state.analysis_source = None
 if "current_ticker" not in st.session_state: st.session_state.current_ticker = None
-if "ticker_input" not in st.session_state: st.session_state.ticker_input = "RELIANCE.NS"
+if "ticker_input" not in st.session_state: st.session_state.ticker_input = ""
 
 def trigger_analysis():
-    st.session_state.is_analyzing = True
-    st.session_state.analysis_results = None
-    st.session_state.current_ticker = st.session_state.ticker_input.upper()
+    # THE FIX: Only trigger the AI if the user actually typed something
+    if st.session_state.ticker_input.strip():
+        st.session_state.is_analyzing = True
+        st.session_state.analysis_results = None
+        st.session_state.current_ticker = st.session_state.ticker_input.upper().strip()
+    else:
+        st.session_state.is_analyzing = False
 
 # --- 6. MAIN UI LOGIC ---
 def main():
@@ -186,12 +190,21 @@ def main():
     st.subheader("Autonomous Information Synthesis & Risk Highlighting")
 
     with st.sidebar:
-        st.header("⚙️ Settings")
-        st.text_input("Stock Ticker", key="ticker_input", on_change=trigger_analysis)
+        #st.header("⚙️ Settings")
+        # THE FIX: Added the placeholder parameter
+        st.text_input(
+            "Stock Ticker", 
+            key="ticker_input", 
+            placeholder="e.g. RELIANCE.NS", 
+            on_change=trigger_analysis
+        )
+        
         st.button("🔍 Synthesize Data", use_container_width=True, on_click=trigger_analysis)
         st.markdown("---")
-        if st.session_state.ticker_input:
-            live_price_sidebar(st.session_state.ticker_input.upper())
+        
+        # This automatically hides the live price/fundamentals if the input is empty!
+        if st.session_state.ticker_input.strip():
+            live_price_sidebar(st.session_state.ticker_input.upper().strip())
 
     if st.session_state.is_analyzing and st.session_state.current_ticker:
         if st.session_state.analysis_results is None:
