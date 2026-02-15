@@ -178,8 +178,25 @@ def render_interactive_chart(ticker):
     period, interval = tf_map[timeframe]
     
     try:
-        yf_ticker = ticker if (ticker.endswith('.NS') or ticker.endswith('.BO')) else ticker + '.NS'
+        # THE FIX 1: Smart Router for the Chart (handles BSE numerical tickers correctly)
+        ticker_upper = ticker.upper().strip()
+        clean_ticker = ticker_upper.replace('.NS', '').replace('.BO', '').replace('.BSE', '').strip()
+        
+        yf_ticker = ticker_upper
+        if not clean_ticker.isdigit() and not yf_ticker.endswith('.NS'):
+            yf_ticker = f"{clean_ticker}.NS"
+        elif clean_ticker.isdigit() and not yf_ticker.endswith('.BO'):
+            yf_ticker = f"{clean_ticker}.BO"
+            
         hist = yf.Ticker(yf_ticker).history(period=period, interval=interval)
+        
+        # THE FIX 2: The Weekend 1D Intraday Bug 
+        # yfinance often returns empty data on weekends for 1d. We fetch 5d and slice the last day.
+        if hist.empty and period == "1d":
+            hist = yf.Ticker(yf_ticker).history(period="5d", interval=interval)
+            if not hist.empty:
+                last_day = hist.index[-1].date()
+                hist = hist[hist.index.date == last_day]
         
         if not hist.empty:
             fig = go.Figure()
@@ -195,8 +212,7 @@ def render_interactive_chart(ticker):
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)'
             )
-
-            # --- THE FIX: Clean up the hover toolbar ---
+            
             plotly_config = {
                 'displaylogo': False,
                 'modeBarButtonsToRemove': [
@@ -207,9 +223,9 @@ def render_interactive_chart(ticker):
             
             st.plotly_chart(fig, use_container_width=True, config=plotly_config)
         else:
-            st.info("Chart data gathering...")
+            st.warning("⚠️ Chart data currently unavailable for this ticker.")
     except Exception as e:
-        st.error("Could not load chart.")
+        st.error(f"Could not load chart: {e}")
 
 # --- 5. SESSION STATE & TRIGGERS ---
 if "is_analyzing" not in st.session_state: st.session_state.is_analyzing = False
