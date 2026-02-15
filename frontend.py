@@ -41,23 +41,31 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+import requests
+from bs4 import BeautifulSoup
+from datetime import datetime
+import yfinance as yf
+
+# --- 3. THE SMART PRICE ENGINE (Groww + Google + Auto-Router) ---
 def get_current_price(ticker):
     ticker_upper = ticker.upper().strip()
     
-    # 1. Determine the Exchange safely
-    is_bse = ticker_upper.endswith('.BO') or ticker_upper.endswith('.BSE')
-    groww_exchange = "BSE" if is_bse else "NSE"
-    
-    # Google uses 'BOM' for Bombay Stock Exchange, NOT 'BSE'
-    google_exchange = "BOM" if is_bse else "NSE"
-    
-    # 2. Clean the ticker (removes the suffixes safely)
+    # 1. Clean the ticker (remove all suffixes)
     clean_ticker = ticker_upper.replace('.NS', '').replace('.BO', '').replace('.BSE', '').strip()
     
+    # 2. The Smart Router: BSE strictly requires 6-digit Scrip Codes (e.g. 500325)
+    # If the ticker contains letters (e.g. RELIANCE), we MUST route to NSE. 
+    if clean_ticker.isdigit():
+        groww_exchange = "BSE"
+        google_exchange = "BOM"
+    else:
+        groww_exchange = "NSE"
+        google_exchange = "NSE"
+        
     headers = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
 
     # ---------------------------------------------------------
-    # ATTEMPT 1: Groww JSON API
+    # ATTEMPT 1: Groww JSON API (Fastest)
     # ---------------------------------------------------------
     try:
         url = f"https://groww.in/v1/api/stocks_data/v1/tr_live_prices/exchange/{groww_exchange}/segment/CASH/{clean_ticker}/latest"
@@ -68,17 +76,15 @@ def get_current_price(ticker):
             prev_close = float(data.get('close', 0.0))
             if price > 0:
                 return price, "₹", (price - prev_close), datetime.now().weekday() >= 5
-    except Exception as e:
-        print(f"Groww API Error: {e}")
+    except Exception:
+        pass
 
     # ---------------------------------------------------------
     # ATTEMPT 2: Google Finance Fallback
     # ---------------------------------------------------------
     try:
-        # Note: We pass 'google_exchange' (BOM/NSE) here, not the Groww one!
         url = f"https://www.google.com/finance/quote/{clean_ticker}:{google_exchange}"
         res = requests.get(url, headers=headers, timeout=5)
-        from bs4 import BeautifulSoup
         soup = BeautifulSoup(res.text, 'html.parser')
         
         price_div = soup.find('div', {'data-last-price': True})
@@ -87,8 +93,23 @@ def get_current_price(ticker):
             prev_close_div = soup.find('div', {'data-previous-close': True})
             change = price - float(prev_close_div['data-previous-close']) if prev_close_div else 0.0
             return price, "₹", change, datetime.now().weekday() >= 5
-    except Exception as e:
-        print(f"Google Finance Fallback Error: {e}")
+    except Exception:
+        pass
+        
+    # ---------------------------------------------------------
+    # ATTEMPT 3: The Yahoo Finance Safety Net (For BSE-exclusive microcaps)
+    # ---------------------------------------------------------
+    try:
+        # If the user typed an alphabetic BSE ticker (like a BSE-only penny stock),
+        # yfinance is the only library that can successfully map the '.BO' letters.
+        stock = yf.Ticker(ticker_upper)
+        hist = stock.history(period="5d")
+        if not hist.empty:
+            price = float(hist['Close'].iloc[-1])
+            prev_close = float(hist['Close'].iloc[-2]) if len(hist) >= 2 else price
+            return price, "₹", (price - prev_close), datetime.now().weekday() >= 5
+    except Exception:
+        pass
 
     # Complete Failure
     return None, None, None, False
@@ -289,27 +310,27 @@ def main():
                     value=f"{result.get('sentiment_score', 0)}/10", 
                     help="How people feel about the stock right now. 1 means people are panicking and selling. 10 means people are excited and buying."
                 )
-            
-            # FEATURE 1: Interactive Chart
-            render_interactive_chart(st.session_state.current_ticker)
-            st.markdown("---")
-
+                        
             # AI Analysis Columns
             col_bull, col_bear = st.columns(2)
             with col_bull:
-                st.markdown("### 📈 Key Catalysts (Bull Case)")
+                st.markdown("### 📈 Key Catalysts")
                 catalysts = result.get('key_catalysts', [])
                 if isinstance(catalysts, list) and catalysts:
                     for c in catalysts: st.markdown(f'<div class="catalyst-bullet">✅ {c}</div>', unsafe_allow_html=True)
                 else: st.write("No positive catalysts identified.")
                 
             with col_bear:
-                st.markdown("### 🛡️ Risk Audit (Bear Case)")
+                st.markdown("### 🛡️ Risk Audit")
                 risks = result.get('risk_summary', [])
                 if isinstance(risks, list) and risks:
                     for r in risks: st.markdown(f'<div class="risk-bullet">⚠️ {r}</div>', unsafe_allow_html=True)
                 else: st.write("No significant risks identified.")
 
+            # FEATURE 1: Interactive Chart
+            render_interactive_chart(st.session_state.current_ticker)
+            st.markdown("---")
+    
     st.markdown("""
         <div class="legal-disclaimer">
             <strong>Disclaimer:</strong> This application utilizes Large Language Models (LLMs) to synthesize public financial data for informational purposes only. It is not financial advice.
