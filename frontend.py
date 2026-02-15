@@ -41,34 +41,56 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. THE ENGINES (Price & Fundamentals) ---
 def get_current_price(ticker):
-    clean_ticker = ticker.upper().replace('.NS', '').replace('.BO', '').strip()
-    exchange = "BSE" if ".BO" in ticker.upper() else "NSE"
+    ticker_upper = ticker.upper().strip()
+    
+    # 1. Determine the Exchange safely
+    is_bse = ticker_upper.endswith('.BO') or ticker_upper.endswith('.BSE')
+    groww_exchange = "BSE" if is_bse else "NSE"
+    
+    # Google uses 'BOM' for Bombay Stock Exchange, NOT 'BSE'
+    google_exchange = "BOM" if is_bse else "NSE"
+    
+    # 2. Clean the ticker (removes the suffixes safely)
+    clean_ticker = ticker_upper.replace('.NS', '').replace('.BO', '').replace('.BSE', '').strip()
+    
     headers = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
 
+    # ---------------------------------------------------------
+    # ATTEMPT 1: Groww JSON API
+    # ---------------------------------------------------------
     try:
-        url = f"https://groww.in/v1/api/stocks_data/v1/tr_live_prices/exchange/{exchange}/segment/CASH/{clean_ticker}/latest"
+        url = f"https://groww.in/v1/api/stocks_data/v1/tr_live_prices/exchange/{groww_exchange}/segment/CASH/{clean_ticker}/latest"
         res = requests.get(url, headers=headers, timeout=5)
         if res.status_code == 200:
             data = res.json()
-            price, prev_close = float(data.get('ltp', 0.0)), float(data.get('close', 0.0))
+            price = float(data.get('ltp', 0.0))
+            prev_close = float(data.get('close', 0.0))
             if price > 0:
                 return price, "₹", (price - prev_close), datetime.now().weekday() >= 5
-    except: pass
+    except Exception as e:
+        print(f"Groww API Error: {e}")
 
+    # ---------------------------------------------------------
+    # ATTEMPT 2: Google Finance Fallback
+    # ---------------------------------------------------------
     try:
-        url = f"https://www.google.com/finance/quote/{clean_ticker}:{exchange}"
+        # Note: We pass 'google_exchange' (BOM/NSE) here, not the Groww one!
+        url = f"https://www.google.com/finance/quote/{clean_ticker}:{google_exchange}"
         res = requests.get(url, headers=headers, timeout=5)
+        from bs4 import BeautifulSoup
         soup = BeautifulSoup(res.text, 'html.parser')
+        
         price_div = soup.find('div', {'data-last-price': True})
         if price_div:
             price = float(price_div['data-last-price'])
             prev_close_div = soup.find('div', {'data-previous-close': True})
             change = price - float(prev_close_div['data-previous-close']) if prev_close_div else 0.0
             return price, "₹", change, datetime.now().weekday() >= 5
-    except: pass
+    except Exception as e:
+        print(f"Google Finance Fallback Error: {e}")
 
+    # Complete Failure
     return None, None, None, False
 
 @st.cache_data(ttl=3600) # Cache for 1 hour so it's instantly fast
@@ -186,7 +208,7 @@ def trigger_analysis():
 
 # --- 6. MAIN UI LOGIC ---
 def main():
-    st.title("🔬 AI Equity Research Assistant")
+    st.title("🔬 AI Investment Research Assistant")
     st.subheader("Autonomous Information Synthesis & Risk Highlighting")
 
     with st.sidebar:
