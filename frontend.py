@@ -18,11 +18,11 @@ st.set_page_config(
 st.markdown("""
     <style>
     [data-testid="InputInstructions"] { display: none !important; }
+    /* Fixes the wrapping issue - forces numbers to stay on one line */
     [data-testid="stMetricValue"] > div { 
-        font-size: 1.2rem !important; 
+        font-size: 1.3rem !important; 
         font-weight: 700 !important;
-        white-space: normal !important; 
-        word-break: break-word !important; 
+        white-space: nowrap !important; 
     }
     .risk-bullet { 
         background-color: #fff5f5; padding: 12px; border-radius: 8px; 
@@ -100,9 +100,9 @@ def live_price_sidebar(ticker_symbol):
         # FEATURE 3: Minimalist Fundamentals inside a collapsible expander
         with st.expander("📊 Fundamental Snapshot", expanded=False):
             funds = get_fundamentals(ticker_symbol)
-            f1, f2 = st.columns(2)
-            f1.metric("Market Cap", funds['mcap'])
-            f2.metric("P/E Ratio", funds['pe'])
+            # Removed columns so the text has the full width of the sidebar
+            st.metric("Market Cap", funds['mcap'])
+            st.metric("P/E Ratio", funds['pe'])
             st.metric("52-Week Range", f"₹{funds['low52']} - ₹{funds['high52']}")
     else:
         st.warning("⚠️ Market data unavailable.")
@@ -140,7 +140,17 @@ def render_interactive_chart(ticker):
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)'
             )
-            st.plotly_chart(fig, use_container_width=True)
+
+            # --- THE FIX: Clean up the hover toolbar ---
+            plotly_config = {
+                'displaylogo': False,
+                'modeBarButtonsToRemove': [
+                    'zoom2d', 'pan2d', 'select2d', 'lasso2d', 
+                    'zoomIn2d', 'zoomOut2d', 'resetScale2d'
+                ]
+            }
+            
+            st.plotly_chart(fig, use_container_width=True, config=plotly_config)
         else:
             st.info("Chart data gathering...")
     except Exception as e:
