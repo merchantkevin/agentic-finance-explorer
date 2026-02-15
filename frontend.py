@@ -96,14 +96,26 @@ def live_price_sidebar(ticker_symbol):
     if price:
         st.metric(label=f"Live Price: {ticker_symbol}", value=f"{currency} {price:.2f}", delta=f"{change:.2f} Today")
         st.caption("⏸ Market Closed" if is_weekend else "🟢 Market Open")
-        
+
         # FEATURE 3: Minimalist Fundamentals inside a collapsible expander
         with st.expander("📊 Fundamental Snapshot", expanded=False):
             funds = get_fundamentals(ticker_symbol)
-            # Removed columns so the text has the full width of the sidebar
-            st.metric("Market Cap", funds['mcap'])
-            st.metric("P/E Ratio", funds['pe'])
-            st.metric("52-Week Range", f"₹{funds['low52']} - ₹{funds['high52']}")
+            
+            st.metric(
+                label="Market Cap", 
+                value=funds['mcap'], 
+                help="The total price tag of the entire company. If you wanted to buy every single share of this business today, this is how much it would cost."
+            )
+            st.metric(
+                label="P/E Ratio", 
+                value=funds['pe'], 
+                help="How expensive the stock is compared to the actual profit the company makes. A lower number usually means you are getting a better deal."
+            )
+            st.metric(
+                label="52-Week Range", 
+                value=f"₹{funds['low52']} - ₹{funds['high52']}", 
+                help="The absolute highest and lowest price this stock has sold for over the last year."
+            )
     else:
         st.warning("⚠️ Market data unavailable.")
 
@@ -231,10 +243,17 @@ def main():
             # Top Metrics
             m1, m2 = st.columns(2)
             with m1:
-                st.metric("Technical Signal", result.get('technical_signal', 'N/A'), help="Aggregate signal based on moving averages and RSI.")
+                st.metric(
+                    label="Technical Signal", 
+                    value=result.get('technical_signal', 'N/A'), 
+                    help="The AI's guess on where the price is heading based on recent chart patterns. 'Bullish' means it looks like it will go up, 'Bearish' means it looks like it will go down."
+                )
             with m2:
-                st.metric("Market Sentiment Score", f"{result.get('sentiment_score', 0)}/10", help="1 = Extreme Fear, 10 = Extreme Greed.")
-            st.markdown("---")
+                st.metric(
+                    label="Market Sentiment Score", 
+                    value=f"{result.get('sentiment_score', 0)}/10", 
+                    help="How people feel about the stock right now. 1 means people are panicking and selling. 10 means people are excited and buying."
+                )
             
             # FEATURE 1: Interactive Chart
             render_interactive_chart(st.session_state.current_ticker)
