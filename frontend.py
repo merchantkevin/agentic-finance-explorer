@@ -1,10 +1,10 @@
 import streamlit as st
-import yfinance as yf
 import requests
 import time
 from datetime import datetime
 from bs4 import BeautifulSoup
-import re
+import yfinance as yf
+import plotly.graph_objects as go
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
@@ -17,20 +17,13 @@ st.set_page_config(
 # --- 2. CUSTOM STYLING ---
 st.markdown("""
     <style>
-    /* Hides the "Press Enter to apply" text in the text box */
-    [data-testid="InputInstructions"] { 
-        display: none !important; 
-    }
-    
-    /* Metric Value Styling */
+    [data-testid="InputInstructions"] { display: none !important; }
     [data-testid="stMetricValue"] > div { 
         font-size: 1.2rem !important; 
         font-weight: 700 !important;
         white-space: normal !important; 
         word-break: break-word !important; 
     }
-    
-    /* Risk & Catalyst Cards */
     .risk-bullet { 
         background-color: #fff5f5; padding: 12px; border-radius: 8px; 
         border-left: 4px solid #9b2c2c; margin-bottom: 10px; 
@@ -41,238 +34,221 @@ st.markdown("""
         border-left: 4px solid #166534; margin-bottom: 10px; 
         font-size: 0.9rem; color: #166534; line-height: 1.4; 
     }
-    
-    /* Footer Disclaimer Styling */
     .legal-disclaimer {
-        margin-top: 50px;
-        padding: 15px;
-        border-top: 1px solid #e2e8f0;
-        font-size: 0.8rem;
-        color: #64748b;
-        text-align: center;
+        margin-top: 50px; padding: 15px; border-top: 1px solid #e2e8f0;
+        font-size: 0.8rem; color: #64748b; text-align: center;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. THE PRICE ENGINE (Groww JSON API + Google Fallback) ---
+# --- 3. THE ENGINES (Price & Fundamentals) ---
 def get_current_price(ticker):
-    """
-    Zero-Yahoo Price Engine.
-    Primary: Groww's Native Indian Market JSON API.
-    Fallback: Google Finance DOM attribute extraction.
-    """
-    # Clean the ticker so it works for the Indian APIs
     clean_ticker = ticker.upper().replace('.NS', '').replace('.BO', '').strip()
     exchange = "BSE" if ".BO" in ticker.upper() else "NSE"
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
-        'Accept': 'application/json'
-    }
+    headers = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
 
-    # ---------------------------------------------------------
-    # ATTEMPT 1: Groww JSON API (Fastest & Native for India)
-    # ---------------------------------------------------------
     try:
         url = f"https://groww.in/v1/api/stocks_data/v1/tr_live_prices/exchange/{exchange}/segment/CASH/{clean_ticker}/latest"
         res = requests.get(url, headers=headers, timeout=5)
-        
         if res.status_code == 200:
             data = res.json()
-            # Groww provides clean Last Traded Price (ltp) and Previous Close (close)
-            price = float(data.get('ltp', 0.0))
-            prev_close = float(data.get('close', 0.0))
-            
+            price, prev_close = float(data.get('ltp', 0.0)), float(data.get('close', 0.0))
             if price > 0:
-                change = price - prev_close
-                is_weekend = datetime.now().weekday() >= 5
-                return price, "₹", change, is_weekend
-    except Exception as e:
-        print(f"Groww API Error: {e}")
+                return price, "₹", (price - prev_close), datetime.now().weekday() >= 5
+    except: pass
 
-    # ---------------------------------------------------------
-    # ATTEMPT 2: Google Finance (Bulletproof DOM Scraper)
-    # ---------------------------------------------------------
     try:
-        # If Groww fails, we fallback to Google, but we IGNORE the changing CSS classes
         url = f"https://www.google.com/finance/quote/{clean_ticker}:{exchange}"
         res = requests.get(url, headers=headers, timeout=5)
         soup = BeautifulSoup(res.text, 'html.parser')
-        
-        # We look for Google's internal mathematical data attributes instead
         price_div = soup.find('div', {'data-last-price': True})
-        
         if price_div:
             price = float(price_div['data-last-price'])
-            is_weekend = datetime.now().weekday() >= 5
-            
-            # Try to find previous close to calculate the difference
-            change = 0.0
             prev_close_div = soup.find('div', {'data-previous-close': True})
-            if prev_close_div:
-                prev_close = float(prev_close_div['data-previous-close'])
-                change = price - prev_close
-                
-            return price, "₹", change, is_weekend
-    except Exception as e:
-        print(f"Google Finance Fallback Error: {e}")
+            change = price - float(prev_close_div['data-previous-close']) if prev_close_div else 0.0
+            return price, "₹", change, datetime.now().weekday() >= 5
+    except: pass
 
-    # Complete Failure
     return None, None, None, False
 
-# --- 4. THE LIVE HEARTBEAT ---
+@st.cache_data(ttl=3600) # Cache for 1 hour so it's instantly fast
+def get_fundamentals(ticker):
+    try:
+        # We use yfinance here because historical data is stable, unlike live prices
+        yf_ticker = ticker if (ticker.endswith('.NS') or ticker.endswith('.BO')) else ticker + '.NS'
+        info = yf.Ticker(yf_ticker).info
+        mcap = info.get('marketCap', 0)
+        mcap_str = f"₹{mcap/1e7:.2f} Cr" if mcap > 1e7 else "N/A"
+        pe = info.get('trailingPE', 'N/A')
+        return {
+            "mcap": mcap_str,
+            "pe": f"{pe:.2f}" if isinstance(pe, (int, float)) else "N/A",
+            "high52": info.get('fiftyTwoWeekHigh', 'N/A'),
+            "low52": info.get('fiftyTwoWeekLow', 'N/A')
+        }
+    except:
+        return {"mcap": "N/A", "pe": "N/A", "high52": "N/A", "low52": "N/A"}
+
+# --- 4. UI FRAGMENTS ---
 @st.fragment(run_every=10) 
 def live_price_sidebar(ticker_symbol):
     price, currency, change, is_weekend = get_current_price(ticker_symbol)
     if price:
-        st.metric(
-            label=f"Market Price: {ticker_symbol}", 
-            value=f"{currency} {price:.2f}",
-            delta=f"{change:.2f} (Prev Close)"
-        )
-        if is_weekend:
-            st.caption("⏸ Market Closed (Weekend)")
-        else:
-            st.caption("🟢 Market Open (Live)")
+        st.metric(label=f"Live Price: {ticker_symbol}", value=f"{currency} {price:.2f}", delta=f"{change:.2f} Today")
+        st.caption("⏸ Market Closed" if is_weekend else "🟢 Market Open")
+        
+        # FEATURE 3: Minimalist Fundamentals inside a collapsible expander
+        with st.expander("📊 Fundamental Snapshot", expanded=False):
+            funds = get_fundamentals(ticker_symbol)
+            f1, f2 = st.columns(2)
+            f1.metric("Market Cap", funds['mcap'])
+            f2.metric("P/E Ratio", funds['pe'])
+            st.metric("52-Week Range", f"₹{funds['low52']} - ₹{funds['high52']}")
     else:
         st.warning("⚠️ Market data unavailable.")
 
-# --- 5. SESSION STATE ---
+@st.fragment
+def render_interactive_chart(ticker):
+    st.markdown("### 📈 Price Action")
+    
+    # Chart Controls
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        chart_type = st.radio("Type", ["Line", "Candlestick"], horizontal=True, label_visibility="collapsed")
+    with col2:
+        timeframe = st.radio("Time", ["1D", "1M", "3M", "6M"], horizontal=True, label_visibility="collapsed", index=3)
+        
+    # Map selection to yfinance parameters
+    tf_map = {"1D": ("1d", "5m"), "1M": ("1mo", "1d"), "3M": ("3mo", "1d"), "6M": ("6mo", "1d")}
+    period, interval = tf_map[timeframe]
+    
+    try:
+        yf_ticker = ticker if (ticker.endswith('.NS') or ticker.endswith('.BO')) else ticker + '.NS'
+        hist = yf.Ticker(yf_ticker).history(period=period, interval=interval)
+        
+        if not hist.empty:
+            fig = go.Figure()
+            if chart_type == "Candlestick":
+                fig.add_trace(go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close']))
+            else:
+                fig.add_trace(go.Scatter(x=hist.index, y=hist['Close'], mode='lines', line=dict(color='#2563eb', width=2)))
+                
+            fig.update_layout(
+                margin=dict(l=0, r=0, t=10, b=0),
+                height=350,
+                xaxis_rangeslider_visible=False,
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Chart data gathering...")
+    except Exception as e:
+        st.error("Could not load chart.")
+
+# --- 5. SESSION STATE & TRIGGERS ---
 if "is_analyzing" not in st.session_state: st.session_state.is_analyzing = False
 if "analysis_results" not in st.session_state: st.session_state.analysis_results = None
 if "analysis_source" not in st.session_state: st.session_state.analysis_source = None
 if "current_ticker" not in st.session_state: st.session_state.current_ticker = None
+if "ticker_input" not in st.session_state: st.session_state.ticker_input = "RELIANCE.NS"
+
+def trigger_analysis():
+    st.session_state.is_analyzing = True
+    st.session_state.analysis_results = None
+    st.session_state.current_ticker = st.session_state.ticker_input.upper()
 
 # --- 6. MAIN UI LOGIC ---
 def main():
-    st.title("🔬 AI Investment Research Assistant")
+    st.title("🔬 AI Equity Research Assistant")
     st.subheader("Autonomous Information Synthesis & Risk Highlighting")
 
     with st.sidebar:
-        #st.header("⚙️ Settings")
-        ticker = st.text_input("Stock Ticker", value="RELIANCE.NS").upper()
-        
-        if st.button("🔍 Analyse Data", use_container_width=True):
-            st.session_state.is_analyzing = True
-            st.session_state.analysis_results = None 
-            st.session_state.current_ticker = ticker
-        
+        st.header("⚙️ Settings")
+        st.text_input("Stock Ticker", key="ticker_input", on_change=trigger_analysis)
+        st.button("🔍 Synthesize Data", use_container_width=True, on_click=trigger_analysis)
         st.markdown("---")
-        if ticker:
-            live_price_sidebar(ticker)
+        if st.session_state.ticker_input:
+            live_price_sidebar(st.session_state.ticker_input.upper())
 
-    # --- ANALYSIS EXECUTION ---
     if st.session_state.is_analyzing and st.session_state.current_ticker:
-        
         if st.session_state.analysis_results is None:
             with st.status(f"Agents synthesizing data for {st.session_state.current_ticker}...", expanded=True) as status_box:
                 try:
+                    # [ACTION REQUIRED] Update your backend URL if needed!
                     backend_url = "https://agentic-finance-explorer.onrender.com" 
                     response = requests.post(f"{backend_url}/analyze", json={"ticker": st.session_state.current_ticker})
                     
                     if response.status_code == 200:
                         data = response.json()
-
                         if data.get("status") == "completed":
-                            st.session_state.analysis_results = data.get("result")
-                            st.session_state.analysis_source = data.get("source")
+                            st.session_state.analysis_results, st.session_state.analysis_source = data.get("result"), data.get("source")
                             status_box.update(label="Intelligence Retrieved!", state="complete", expanded=False)
                             time.sleep(1)
                             st.rerun() 
                         else:
                             job_id = data.get("job_id")
-                            max_attempts = 25
-                            attempts = 0
-                            
+                            max_attempts, attempts = 25, 0
                             while attempts < max_attempts:
                                 poll_res = requests.get(f"{backend_url}/status/{job_id}")
-                                if poll_res.status_code != 200:
-                                    status_box.update(label="Backend lost connection.", state="error")
-                                    st.session_state.is_analyzing = False
-                                    break
-                                    
+                                if poll_res.status_code != 200: break
                                 poll_data = poll_res.json()
                                 current_status = poll_data.get("status")
         
                                 if current_status == "completed":
-                                    st.session_state.analysis_results = poll_data.get("result")
-                                    st.session_state.analysis_source = "Live Agent Synthesis"
+                                    st.session_state.analysis_results, st.session_state.analysis_source = poll_data.get("result"), "Live Agent Synthesis"
                                     status_box.update(label="Synthesis Complete!", state="complete", expanded=False)
                                     time.sleep(1)
                                     st.rerun() 
                                     break 
-                                
                                 elif current_status == "failed":
-                                    status_box.update(label=f"Analysis failed: {poll_data.get('error')}", state="error")
-                                    st.session_state.is_analyzing = False
+                                    status_box.update(label=f"Analysis failed.", state="error")
                                     break
                                 
-                                status_box.update(label=f"🕵️ Agents are compiling reports... (Step {attempts+1}/{max_attempts})", state="running")
+                                status_box.update(label=f"🕵️ Interns are compiling reports... (Step {attempts+1}/{max_attempts})", state="running")
                                 time.sleep(5)
                                 attempts += 1
-                            
-                            if attempts >= max_attempts:
-                                status_box.update(label="Timeout.", state="error")
-                                st.session_state.is_analyzing = False
-                    else:
-                        status_box.update(label="Backend Handshake Failed.", state="error")
-                        st.session_state.is_analyzing = False
                 except Exception as e:
                     status_box.update(label=f"System Error: {str(e)}", state="error")
                     st.session_state.is_analyzing = False
 
-        # --- DISPLAY RESULTS ---
         result = st.session_state.analysis_results
         if result:
             source = st.session_state.analysis_source
-            
-            if "Intelligence" in source:
-                st.info(f"📁 Source: {source} (Price Stable Cache)")
-            else:
-                st.success(f"🟢 Source: {source}")
+            if "Intelligence" in source: st.info(f"📁 Source: {source} (Price Stable Cache)")
+            else: st.success(f"🟢 Source: {source}")
 
-            # Top Metrics with Tooltips (The 'help' parameter adds the hovering '?')
+            # Top Metrics
             m1, m2 = st.columns(2)
             with m1:
-                st.metric(
-                    label="Technical Signal", 
-                    value=result.get('technical_signal', 'N/A'),
-                    help="Aggregate signal based on moving averages, RSI, and MACD indicators over recent trading sessions."
-                )
+                st.metric("Technical Signal", result.get('technical_signal', 'N/A'), help="Aggregate signal based on moving averages and RSI.")
             with m2:
-                st.metric(
-                    label="Market Sentiment Score", 
-                    value=f"{result.get('sentiment_score', 0)}/10",
-                    help="Scale of 1-10. 1 indicates extreme fear/bearish news coverage, while 10 indicates extreme greed/bullish media sentiment."
-                )
-
+                st.metric("Market Sentiment Score", f"{result.get('sentiment_score', 0)}/10", help="1 = Extreme Fear, 10 = Extreme Greed.")
             st.markdown("---")
             
-            # The New Layout: Catalysts vs Risks
+            # FEATURE 1: Interactive Chart
+            render_interactive_chart(st.session_state.current_ticker)
+            st.markdown("---")
+
+            # AI Analysis Columns
             col_bull, col_bear = st.columns(2)
-            
             with col_bull:
-                st.markdown("### 📈 Key Catalysts")
+                st.markdown("### 📈 Key Catalysts (Bull Case)")
                 catalysts = result.get('key_catalysts', [])
                 if isinstance(catalysts, list) and catalysts:
-                    for c in catalysts:
-                        st.markdown(f'<div class="catalyst-bullet">✅ {c}</div>', unsafe_allow_html=True)
-                else:
-                    st.write("No positive catalysts identified.")
+                    for c in catalysts: st.markdown(f'<div class="catalyst-bullet">✅ {c}</div>', unsafe_allow_html=True)
+                else: st.write("No positive catalysts identified.")
                 
             with col_bear:
-                st.markdown("### 🛡️ Risk Audit")
+                st.markdown("### 🛡️ Risk Audit (Bear Case)")
                 risks = result.get('risk_summary', [])
                 if isinstance(risks, list) and risks:
-                    for r in risks:
-                        st.markdown(f'<div class="risk-bullet">⚠️ {r}</div>', unsafe_allow_html=True)
-                else:
-                    st.write("No significant risks identified.")
+                    for r in risks: st.markdown(f'<div class="risk-bullet">⚠️ {r}</div>', unsafe_allow_html=True)
+                else: st.write("No significant risks identified.")
 
-    # --- MANDATORY LEGAL FOOTER ---
     st.markdown("""
         <div class="legal-disclaimer">
-            <strong>Disclaimer:</strong> This application utilizes Large Language Models (LLMs) to synthesize public financial data for informational and educational purposes only. It is not a registered investment advisor. The insights, signals, and scores provided do not constitute financial, legal, or tax advice. Always conduct your own due diligence or consult a certified professional before making investment decisions.
+            <strong>Disclaimer:</strong> This application utilizes Large Language Models (LLMs) to synthesize public financial data for informational purposes only. It is not financial advice.
         </div>
     """, unsafe_allow_html=True)
 
