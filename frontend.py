@@ -114,7 +114,7 @@ def get_current_price(ticker):
     # Complete Failure
     return None, None, None, False
 
-@st.cache_data(ttl=3600) # Cache for 1 hour so it's instantly fast
+@st.cache_data(ttl=1800) # Cache for 1 hour so it's instantly fast
 def get_fundamentals(ticker):
     try:
         # We use yfinance here because historical data is stable, unlike live prices
@@ -258,7 +258,7 @@ def main():
             on_change=trigger_analysis
         )
         
-        st.button("🔍 Synthesize Data", use_container_width=True, on_click=trigger_analysis)
+        st.button("🔍 Analyze Data", use_container_width=True, on_click=trigger_analysis)
         st.markdown("---")
         
         # This automatically hides the live price/fundamentals if the input is empty!
@@ -268,8 +268,7 @@ def main():
     if st.session_state.is_analyzing and st.session_state.current_ticker:
         if st.session_state.analysis_results is None:
             with st.status(f"Agents synthesizing data for {st.session_state.current_ticker}...", expanded=True) as status_box:
-                try:
-                    # [ACTION REQUIRED] Update your backend URL if needed!
+                try:                    
                     backend_url = "https://agentic-finance-explorer.onrender.com" 
                     response = requests.post(f"{backend_url}/analyze", json={"ticker": st.session_state.current_ticker})
                     
@@ -290,16 +289,16 @@ def main():
                                 current_status = poll_data.get("status")
         
                                 if current_status == "completed":
-                                    st.session_state.analysis_results, st.session_state.analysis_source = poll_data.get("result"), "Live Agent Synthesis"
-                                    status_box.update(label="Synthesis Complete!", state="complete", expanded=False)
-                                    time.sleep(1)
+                                    st.session_state.analysis_results, st.session_state.analysis_source = poll_data.get("result"), "Live Agent Analysis"
+                                    status_box.update(label="Analysis Complete!", state="complete", expanded=False)
+                                    #time.sleep(1)
                                     st.rerun() 
                                     break 
                                 elif current_status == "failed":
                                     status_box.update(label=f"Analysis failed.", state="error")
                                     break
                                 
-                                status_box.update(label=f"🕵️ Interns are compiling reports... (Step {attempts+1}/{max_attempts})", state="running")
+                                status_box.update(label=f"🕵️ Agents are compiling reports...", state="running")
                                 time.sleep(5)
                                 attempts += 1
                 except Exception as e:
