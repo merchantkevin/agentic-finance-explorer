@@ -50,14 +50,12 @@ import yfinance as yf
 def get_current_price(ticker):
     ticker_upper = ticker.upper().strip()
     
-    # 1. Clean the ticker safely (only remove from the very end)
     clean_ticker = ticker_upper
     for suffix in ['.NSE', '.NS', '.BSE', '.BO']:
         if clean_ticker.endswith(suffix):
             clean_ticker = clean_ticker[:-len(suffix)]
             break
-    
-    # 2. The Smart Router
+            
     if clean_ticker.isdigit() or ticker_upper.endswith(('.BO', '.BSE')):
         groww_exchange = "BSE"
         google_exchange = "BOM"
@@ -67,9 +65,6 @@ def get_current_price(ticker):
         
     headers = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
 
-    # ---------------------------------------------------------
-    # ATTEMPT 1: Groww JSON API (Fastest)
-    # ---------------------------------------------------------
     try:
         url = f"https://groww.in/v1/api/stocks_data/v1/tr_live_prices/exchange/{groww_exchange}/segment/CASH/{clean_ticker}/latest"
         res = requests.get(url, headers=headers, timeout=5)
@@ -82,14 +77,10 @@ def get_current_price(ticker):
     except Exception:
         pass
 
-    # ---------------------------------------------------------
-    # ATTEMPT 2: Google Finance Fallback
-    # ---------------------------------------------------------
     try:
         url = f"https://www.google.com/finance/quote/{clean_ticker}:{google_exchange}"
         res = requests.get(url, headers=headers, timeout=5)
         soup = BeautifulSoup(res.text, 'html.parser')
-        
         price_div = soup.find('div', {'data-last-price': True})
         if price_div:
             price = float(price_div['data-last-price'])
@@ -99,9 +90,6 @@ def get_current_price(ticker):
     except Exception:
         pass
         
-    # ---------------------------------------------------------
-    # ATTEMPT 3: The Yahoo Finance Safety Net
-    # ---------------------------------------------------------
     try:
         yf_ticker = f"{clean_ticker}.BO" if groww_exchange == "BSE" else f"{clean_ticker}.NS"
         stock = yf.Ticker(yf_ticker)
@@ -113,7 +101,6 @@ def get_current_price(ticker):
     except Exception:
         pass
 
-    # Complete Failure
     return None, None, None, False
 
 @st.cache_data(ttl=1800) 
@@ -121,14 +108,13 @@ def get_fundamentals(ticker):
     try:
         ticker_upper = ticker.upper().strip()
         
-        # Safely extract the clean ticker
+        # THE FIX: Same safe suffix extraction for Yahoo
         clean_ticker = ticker_upper
         for suffix in ['.NSE', '.NS', '.BSE', '.BO']:
             if clean_ticker.endswith(suffix):
                 clean_ticker = clean_ticker[:-len(suffix)]
                 break
                 
-        # Accurately rebuild strictly for Yahoo Finance (.NS or .BO)
         if clean_ticker.isdigit() or ticker_upper.endswith(('.BO', '.BSE')):
             yf_ticker = f"{clean_ticker}.BO"
         else:
@@ -181,28 +167,25 @@ def live_price_sidebar(ticker_symbol):
 def render_interactive_chart(ticker):
     st.markdown("### 📈 Price Action")
     
-    # Chart Controls
     col1, col2 = st.columns([1, 1])
     with col1:
         chart_type = st.radio("Type", ["Line", "Candlestick"], horizontal=True, label_visibility="collapsed")
     with col2:
         timeframe = st.radio("Time", ["1D", "1M", "3M", "6M"], horizontal=True, label_visibility="collapsed", index=3)
         
-    # Map selection to yfinance parameters
     tf_map = {"1D": ("1d", "5m"), "1M": ("1mo", "1d"), "3M": ("3mo", "1d"), "6M": ("6mo", "1d")}
     period, interval = tf_map[timeframe]
     
     try:
         ticker_upper = ticker.upper().strip()
         
-        # Safely extract the clean ticker
+        # THE FIX: Chart engine mapping
         clean_ticker = ticker_upper
         for suffix in ['.NSE', '.NS', '.BSE', '.BO']:
             if clean_ticker.endswith(suffix):
                 clean_ticker = clean_ticker[:-len(suffix)]
                 break
                 
-        # Accurately rebuild strictly for Yahoo Finance (.NS or .BO)
         if clean_ticker.isdigit() or ticker_upper.endswith(('.BO', '.BSE')):
             yf_ticker = f"{clean_ticker}.BO"
         else:
@@ -210,7 +193,6 @@ def render_interactive_chart(ticker):
             
         hist = yf.Ticker(yf_ticker).history(period=period, interval=interval)
         
-        # The Weekend 1D Intraday Bug Fix 
         if hist.empty and period == "1d":
             hist = yf.Ticker(yf_ticker).history(period="5d", interval=interval)
             if not hist.empty:
