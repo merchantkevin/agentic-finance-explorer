@@ -108,7 +108,6 @@ def get_fundamentals(ticker):
     try:
         ticker_upper = ticker.upper().strip()
         
-        # THE FIX: Same safe suffix extraction for Yahoo
         clean_ticker = ticker_upper
         for suffix in ['.NSE', '.NS', '.BSE', '.BO']:
             if clean_ticker.endswith(suffix):
@@ -179,7 +178,6 @@ def render_interactive_chart(ticker):
     try:
         ticker_upper = ticker.upper().strip()
         
-        # THE FIX: Chart engine mapping
         clean_ticker = ticker_upper
         for suffix in ['.NSE', '.NS', '.BSE', '.BO']:
             if clean_ticker.endswith(suffix):
@@ -260,7 +258,6 @@ def main():
         st.button("🔍 Analyze Data", use_container_width=True, on_click=trigger_analysis)
         st.markdown("---")
         
-        # This automatically hides the live price/fundamentals if the input is empty!
         if st.session_state.ticker_input.strip():
             live_price_sidebar(st.session_state.ticker_input.upper().strip())
 

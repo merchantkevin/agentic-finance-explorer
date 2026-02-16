@@ -12,13 +12,11 @@ def stock_price_analyzer(ticker: str):
     if not ticker.endswith(".NS"):
         ticker = f"{ticker}.NS"
         
-    # auto_adjust=True ensures we get a consistent 'Close' column
     data = yf.download(ticker, period="1mo", interval="1d", auto_adjust=True)
     
     if data.empty:
         return f"Error: No data found for {ticker}."
 
-    # FIX: Flatten MultiIndex columns if they exist
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.get_level_values(0)
 
@@ -27,7 +25,6 @@ def stock_price_analyzer(ticker: str):
     data['MA20'] = ta.sma(data['Close'], length=20)
     
     # Get the last row values as scalar floats
-    # .item() or float() on a single-element selection is the safest way
     last_row = data.iloc[-1]
     
     current_price = float(last_row['Close'])

@@ -56,7 +56,6 @@ class AnalysisRequest(BaseModel):
     ticker: str
 
 # --- 3. HELPER: SAFE PRICE FETCH ---
-# This is the "Shield" that prevents the currentTradingPeriod error
 def get_safe_price(ticker):
     try:
         stock = yf.Ticker(ticker)
@@ -103,8 +102,8 @@ async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundT
             price_change = abs(current_price - old_price) / old_price
         
         # SMART CACHE LOGIC: 
-        # If price moved < 1% AND it was less than 2 hours ago, return saved data instantly
-        if price_change < 0.01 and (datetime.now() - last_run) < timedelta(hours=2):
+        # If price moved < 0.5% AND it was less than 1 hour ago, return saved data instantly
+        if price_change < 0.005 and (datetime.now() - last_run) < timedelta(hours=1):
             return {
                 "status": "completed", 
                 "result": json.loads(saved_data), 
