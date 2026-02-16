@@ -50,12 +50,15 @@ import yfinance as yf
 def get_current_price(ticker):
     ticker_upper = ticker.upper().strip()
     
-    # 1. Clean the ticker (remove all suffixes)
-    clean_ticker = ticker_upper.replace('.NSE', '').replace('.NS', '').replace('.BO', '').replace('.BSE', '').strip()
+    # 1. Clean the ticker safely (only remove from the very end)
+    clean_ticker = ticker_upper
+    for suffix in ['.NSE', '.NS', '.BSE', '.BO']:
+        if clean_ticker.endswith(suffix):
+            clean_ticker = clean_ticker[:-len(suffix)]
+            break
     
-    # 2. The Smart Router: BSE strictly requires 6-digit Scrip Codes (e.g. 500325)
-    # If the ticker contains letters (e.g. RELIANCE), we MUST route to NSE. 
-    if clean_ticker.isdigit():
+    # 2. The Smart Router
+    if clean_ticker.isdigit() or ticker_upper.endswith(('.BO', '.BSE')):
         groww_exchange = "BSE"
         google_exchange = "BOM"
     else:
@@ -97,12 +100,11 @@ def get_current_price(ticker):
         pass
         
     # ---------------------------------------------------------
-    # ATTEMPT 3: The Yahoo Finance Safety Net (For BSE-exclusive microcaps)
+    # ATTEMPT 3: The Yahoo Finance Safety Net
     # ---------------------------------------------------------
     try:
-        # If the user typed an alphabetic BSE ticker (like a BSE-only penny stock),
-        # yfinance is the only library that can successfully map the '.BO' letters.
-        stock = yf.Ticker(ticker_upper)
+        yf_ticker = f"{clean_ticker}.BO" if groww_exchange == "BSE" else f"{clean_ticker}.NS"
+        stock = yf.Ticker(yf_ticker)
         hist = stock.history(period="5d")
         if not hist.empty:
             price = float(hist['Close'].iloc[-1])
@@ -114,11 +116,24 @@ def get_current_price(ticker):
     # Complete Failure
     return None, None, None, False
 
-@st.cache_data(ttl=1800) # Cache for 1 hour so it's instantly fast
+@st.cache_data(ttl=1800) 
 def get_fundamentals(ticker):
     try:
-        # We use yfinance here because historical data is stable, unlike live prices
-        yf_ticker = ticker if (ticker.endswith('.NS') or ticker.endswith('.BO')) else ticker + '.NS'
+        ticker_upper = ticker.upper().strip()
+        
+        # Safely extract the clean ticker
+        clean_ticker = ticker_upper
+        for suffix in ['.NSE', '.NS', '.BSE', '.BO']:
+            if clean_ticker.endswith(suffix):
+                clean_ticker = clean_ticker[:-len(suffix)]
+                break
+                
+        # Accurately rebuild strictly for Yahoo Finance (.NS or .BO)
+        if clean_ticker.isdigit() or ticker_upper.endswith(('.BO', '.BSE')):
+            yf_ticker = f"{clean_ticker}.BO"
+        else:
+            yf_ticker = f"{clean_ticker}.NS"
+            
         info = yf.Ticker(yf_ticker).info
         mcap = info.get('marketCap', 0)
         mcap_str = f"₹{mcap/1e7:.2f} Cr" if mcap > 1e7 else "N/A"
@@ -178,20 +193,24 @@ def render_interactive_chart(ticker):
     period, interval = tf_map[timeframe]
     
     try:
-        # THE FIX 1: Smart Router for the Chart (handles BSE numerical tickers correctly)
         ticker_upper = ticker.upper().strip()
-        clean_ticker = ticker_upper.replace('.NS', '').replace('.BO', '').replace('.BSE', '').strip()
         
-        yf_ticker = ticker_upper
-        if not clean_ticker.isdigit() and not yf_ticker.endswith('.NS'):
-            yf_ticker = f"{clean_ticker}.NS"
-        elif clean_ticker.isdigit() and not yf_ticker.endswith('.BO'):
+        # Safely extract the clean ticker
+        clean_ticker = ticker_upper
+        for suffix in ['.NSE', '.NS', '.BSE', '.BO']:
+            if clean_ticker.endswith(suffix):
+                clean_ticker = clean_ticker[:-len(suffix)]
+                break
+                
+        # Accurately rebuild strictly for Yahoo Finance (.NS or .BO)
+        if clean_ticker.isdigit() or ticker_upper.endswith(('.BO', '.BSE')):
             yf_ticker = f"{clean_ticker}.BO"
+        else:
+            yf_ticker = f"{clean_ticker}.NS"
             
         hist = yf.Ticker(yf_ticker).history(period=period, interval=interval)
         
-        # THE FIX 2: The Weekend 1D Intraday Bug 
-        # yfinance often returns empty data on weekends for 1d. We fetch 5d and slice the last day.
+        # The Weekend 1D Intraday Bug Fix 
         if hist.empty and period == "1d":
             hist = yf.Ticker(yf_ticker).history(period="5d", interval=interval)
             if not hist.empty:
@@ -235,7 +254,6 @@ if "current_ticker" not in st.session_state: st.session_state.current_ticker = N
 if "ticker_input" not in st.session_state: st.session_state.ticker_input = ""
 
 def trigger_analysis():
-    # THE FIX: Only trigger the AI if the user actually typed something
     if st.session_state.ticker_input.strip():
         st.session_state.is_analyzing = True
         st.session_state.analysis_results = None
@@ -250,7 +268,6 @@ def main():
 
     with st.sidebar:
         #st.header("⚙️ Settings")
-        # THE FIX: Added the placeholder parameter
         st.text_input(
             "Stock Ticker", 
             key="ticker_input", 
