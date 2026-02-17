@@ -161,10 +161,11 @@ def get_fundamentals(ticker):
 def live_price_sidebar(ticker_symbol):
     price, currency, change, is_weekend = get_current_price(ticker_symbol)
     if price:        
+        # THE FIX: Drop the currency symbol here so Streamlit's regex can swallow the minus sign
         if change < 0:
-            delta_str = f"-{currency} {abs(change):.2f} Today"
+            delta_str = f"-{abs(change):.2f} Today"
         else:
-            delta_str = f"{currency} {change:.2f} Today"
+            delta_str = f"{change:.2f} Today"
             
         st.metric(
             label=f"Live Price: {ticker_symbol}", 
