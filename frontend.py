@@ -119,17 +119,44 @@ def get_fundamentals(ticker):
         else:
             yf_ticker = f"{clean_ticker}.NS"
             
-        info = yf.Ticker(yf_ticker).info
-        mcap = info.get('marketCap', 0)
-        mcap_str = f"₹{mcap/1e7:.2f} Cr" if mcap > 1e7 else "N/A"
-        pe = info.get('trailingPE', 'N/A')
+        stock = yf.Ticker(yf_ticker)
+        info = stock.info
+        
+        # Safety Check 1: Did Yahoo block us or return an empty dictionary?
+        if not info:
+            print(f"⚠️ Yahoo returned empty info for {yf_ticker}")
+            return {"mcap": "N/A", "pe": "N/A", "high52": "N/A", "low52": "N/A"}
+
+        # Safety Check 2: Safely extract Market Cap (handle None Types)
+        mcap = info.get('marketCap')
+        if mcap and isinstance(mcap, (int, float)) and mcap > 1e7:
+            mcap_str = f"₹{mcap/1e7:.2f} Cr"
+        else:
+            mcap_str = "N/A"
+            
+        # Safety Check 3: Safely extract P/E Ratio
+        pe = info.get('trailingPE')
+        if pe and isinstance(pe, (int, float)):
+            pe_str = f"{pe:.2f}"
+        else:
+            pe_str = "N/A"
+            
+        # Safety Check 4: Safely extract 52W Range
+        high52 = info.get('fiftyTwoWeekHigh')
+        low52 = info.get('fiftyTwoWeekLow')
+        
+        high_str = f"{high52:.2f}" if isinstance(high52, (int, float)) else "N/A"
+        low_str = f"{low52:.2f}" if isinstance(low52, (int, float)) else "N/A"
+        
         return {
             "mcap": mcap_str,
-            "pe": f"{pe:.2f}" if isinstance(pe, (int, float)) else "N/A",
-            "high52": info.get('fiftyTwoWeekHigh', 'N/A'),
-            "low52": info.get('fiftyTwoWeekLow', 'N/A')
+            "pe": pe_str,
+            "high52": high_str,
+            "low52": low_str
         }
-    except:
+        
+    except Exception as e:
+        print(f"Fundamentals Error for {ticker}: {e}")
         return {"mcap": "N/A", "pe": "N/A", "high52": "N/A", "low52": "N/A"}
 
 # --- 4. UI FRAGMENTS ---
