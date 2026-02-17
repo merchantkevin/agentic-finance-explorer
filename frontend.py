@@ -161,7 +161,12 @@ def get_fundamentals(ticker):
 def live_price_sidebar(ticker_symbol):
     price, currency, change, is_weekend = get_current_price(ticker_symbol)
     if price:
-        st.metric(label=f"Live Price: {ticker_symbol}", value=f"{currency} {price:.2f}", delta=f"₹{change:.2f} Today")
+        if change < 0:
+            delta_str = f"-{currency}{abs(change):.2f} Today"
+        else:
+            delta_str = f"{currency}{change:.2f} Today"
+            
+        st.metric(label=f"Live Price: {ticker_symbol}", value=f"{currency} {price:.2f}", delta=delta_str)
         st.caption("⏸ Market Closed" if is_weekend else "🟢 Market Open")
 
         # FEATURE 3: Minimalist Fundamentals inside a collapsible expander
