@@ -120,33 +120,31 @@ def get_fundamentals(ticker):
             yf_ticker = f"{clean_ticker}.NS"
             
         stock = yf.Ticker(yf_ticker)
-        info = stock.info
         
-        # Safety Check 1: Did Yahoo block us or return an empty dictionary?
-        if not info:
-            print(f"⚠️ Yahoo returned empty info for {yf_ticker}")
-            return {"mcap": "N/A", "pe": "N/A", "high52": "N/A", "low52": "N/A"}
+        # THE FIX: Bypass the broken `.info` endpoint using `.fast_info`
+        # fast_info hits a resilient Yahoo API that doesn't get blocked
+        fast = stock.fast_info
+        
+        try:
+            # fast_info uses properties in modern yfinance versions
+            mcap = fast.market_cap if hasattr(fast, 'market_cap') else fast.get('marketCap')
+            high52 = fast.year_high if hasattr(fast, 'year_high') else fast.get('yearHigh')
+            low52 = fast.year_low if hasattr(fast, 'year_low') else fast.get('yearLow')
+        except Exception:
+            mcap, high52, low52 = None, None, None
 
-        # Safety Check 2: Safely extract Market Cap (handle None Types)
-        mcap = info.get('marketCap')
-        if mcap and isinstance(mcap, (int, float)) and mcap > 1e7:
-            mcap_str = f"₹{mcap/1e7:.2f} Cr"
-        else:
-            mcap_str = "N/A"
-            
-        # Safety Check 3: Safely extract P/E Ratio
-        pe = info.get('trailingPE')
-        if pe and isinstance(pe, (int, float)):
-            pe_str = f"{pe:.2f}"
-        else:
-            pe_str = "N/A"
-            
-        # Safety Check 4: Safely extract 52W Range
-        high52 = info.get('fiftyTwoWeekHigh')
-        low52 = info.get('fiftyTwoWeekLow')
-        
-        high_str = f"{high52:.2f}" if isinstance(high52, (int, float)) else "N/A"
-        low_str = f"{low52:.2f}" if isinstance(low52, (int, float)) else "N/A"
+        # .info is strictly used as a fallback for P/E since fast_info doesn't carry it
+        try:
+            info = stock.info
+            pe = info.get('trailingPE')
+        except Exception:
+            pe = None
+
+        # Safely format strings only if the data exists
+        mcap_str = f"₹{mcap/1e7:.2f} Cr" if mcap and mcap > 1e7 else "N/A"
+        pe_str = f"{pe:.2f}" if pe and isinstance(pe, (int, float)) else "N/A"
+        high_str = f"{high52:.2f}" if high52 and isinstance(high52, (int, float)) else "N/A"
+        low_str = f"{low52:.2f}" if low52 and isinstance(low52, (int, float)) else "N/A"
         
         return {
             "mcap": mcap_str,
@@ -154,7 +152,6 @@ def get_fundamentals(ticker):
             "high52": high_str,
             "low52": low_str
         }
-        
     except Exception as e:
         print(f"Fundamentals Error for {ticker}: {e}")
         return {"mcap": "N/A", "pe": "N/A", "high52": "N/A", "low52": "N/A"}
