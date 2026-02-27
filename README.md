@@ -46,8 +46,9 @@ The system simulates a high-level investment meeting through three distinct agen
 
 1. **Clone & Install** (using `uv` for lightning-fast speeds):
    ```bash
-   git clone [https://github.com/merchantkevin/FinAI-Nexus.git](https://github.com/merchantkevin/FinAI-Nexus.git)
-   cd FinAI-Nexus
+   git clone [https://github.com/merchantkevin/agentic-finance-explorer.git](https://github.com/merchantkevin/agentic-finance-explorer.git)
+   cd agentic-finance-explorer
 
    uv sync
+
 
