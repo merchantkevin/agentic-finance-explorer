@@ -37,8 +37,8 @@ The system simulates a high-level investment meeting through three distinct agen
 ## 🌟 Key Engineering Features
 - **Defensive Parsing:** Implemented a fallback mechanism to handle stochastic LLM string outputs when schema validation fails.
 - **Async Background Tasks:** Uses FastAPI `BackgroundTasks` to manage long-running (45s+) agentic reasoning loops without blocking the user thread.
-- **Persistent Caching:** Automated JSON-based caching to reduce API costs and latency for frequent ticker queries.
-- **CORS Secure:** Configured Cross-Origin Resource Sharing for secure communication between frontend and backend domains.
+**Persistent Caching:** SQLite-backed caching (`market_data.db`) to reduce API costs and latency — cached results are served if price movement is under 0.5% and the last run was within 1 hour.
+**CORS Enabled:** Cross-Origin Resource Sharing is configured with open wildcard origins (`allow_origins=["*"]`). For production hardening, restrict this to the Streamlit frontend domain.
 
 ---
 
