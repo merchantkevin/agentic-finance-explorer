@@ -86,135 +86,115 @@ def home():
     
 @app.get("/fundamentals/{ticker}")
 def get_fundamentals(ticker: str):
-    try:
-        # --- Clean the ticker symbol ---
-        clean = ticker.upper().strip()
-        for suffix in ['.NSE', '.NS', '.BSE', '.BO']:
-            if clean.endswith(suffix):
-                clean = clean[:-len(suffix)]
-                break
+    clean = ticker.upper().strip()
+    for suffix in ['.NSE', '.NS', '.BSE', '.BO']:
+        if clean.endswith(suffix):
+            clean = clean[:-len(suffix)]
+            break
 
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'text/html,application/xhtml+xml',
-            'Accept-Language': 'en-US,en;q=0.9',
-        }
+    result = {
+        "mcap": "N/A", "pe": "N/A", "high52": "N/A", "low52": "N/A",
+        "book_value": "N/A", "div_yield": "N/A", "roce": "N/A",
+        "roe": "N/A", "eps": "N/A", "debt_eq": "N/A", "face_value": "N/A"
+    }
 
-        data = {}
-
-        # --- PRIMARY: Screener.in ---
-        # Try consolidated view first, fall back to standalone
-        for url in [
-            f"https://www.screener.in/company/{clean}/consolidated/",
-            f"https://www.screener.in/company/{clean}/"
-        ]:
-            try:
-                res = requests.get(url, headers=headers, timeout=10)
-                if res.status_code == 200:
-                    soup = BeautifulSoup(res.text, 'html.parser')
-                    ratios = soup.find('ul', id='top-ratios')
-                    if ratios:
-                        for li in ratios.find_all('li'):
-                            name_el = li.find('span', class_='name')
-                            value_el = li.find('span', class_='number')
-                            if name_el and value_el:
-                                key = name_el.text.strip()
-                                val = value_el.text.strip().replace(',', '')
-                                data[key] = val
-                    if data:
-                        break
-            except Exception as e:
-                print(f"Screener fetch error ({url}): {e}")
-                continue
-
-        # --- SECONDARY: NSE API for real-time data ---
-        # Fills in anything Screener missed, especially 52w high/low
+    def sf(val):
         try:
-            session = requests.Session()
-            nse_headers = {
-                **headers,
-                'Referer': 'https://www.nseindia.com/',
-                'Accept': '*/*',
-            }
-            session.get("https://www.nseindia.com", headers=nse_headers, timeout=8)
-            nse_res = session.get(
-                f"https://www.nseindia.com/api/quote-equity?symbol={clean}",
-                headers=nse_headers,
-                timeout=8
-            )
-            if nse_res.status_code == 200:
-                nse = nse_res.json()
-                price_info = nse.get('priceInfo', {})
-                week_hl = price_info.get('weekHighLow', {})
-                metadata = nse.get('metadata', {})
+            return float(str(val).replace(',', '').strip())
+        except:
+            return None
 
-                # Only use NSE data if Screener didn't provide it
-                if 'nse_high52' not in data:
-                    data['nse_high52'] = str(week_hl.get('max', ''))
-                if 'nse_low52' not in data:
-                    data['nse_low52'] = str(week_hl.get('min', ''))
-                if 'nse_pe' not in data:
-                    data['nse_pe'] = str(metadata.get('pdSymbolPe', ''))
+    def fmt(val, prefix='', suffix='', decimals=2):
+        f = sf(val)
+        return f"{prefix}{f:.{decimals}f}{suffix}" if f is not None else "N/A"
+
+    def get_row(df, *keys):
+        for k in keys:
+            if k in df.index:
+                val = sf(df.loc[k].iloc[0])
+                if val is not None:
+                    return val
+        return None
+
+    try:
+        # Try NSE first, fall back to BSE
+        stock = yf.Ticker(f"{clean}.NS")
+        fast = stock.fast_info
+
+        # Test if this ticker is valid — fast_info.last_price is None for invalid tickers
+        if not getattr(fast, 'last_price', None):
+            stock = yf.Ticker(f"{clean}.BO")
+            fast = stock.fast_info
+
+        # --- LAYER 1: fast_info — always reliable ---
+        shares  = sf(getattr(fast, 'shares', None))
+        price   = sf(getattr(fast, 'last_price', None))
+        mcap    = sf(getattr(fast, 'market_cap', None))
+        yr_high = sf(getattr(fast, 'year_high', None))
+        yr_low  = sf(getattr(fast, 'year_low', None))
+
+        if mcap:    result['mcap']   = f"₹{mcap/1e7:,.0f} Cr"
+        if yr_high: result['high52'] = f"₹{yr_high:.2f}"
+        if yr_low:  result['low52']  = f"₹{yr_low:.2f}"
+
+        # --- LAYER 2: get_info() — try first for derived metrics ---
+        info = {}
+        try:
+            info = stock.get_info() or {}
         except Exception as e:
-            print(f"NSE API error: {e}")
+            print(f"get_info() failed for {clean}: {e}")
 
-        # --- PARSE & FORMAT ---
-        def safe_float(val):
-            try:
-                return float(str(val).replace(',', '').strip())
-            except:
-                return None
+        if info.get('trailingPE'):    result['pe']         = fmt(info['trailingPE'])
+        if info.get('trailingEps'):   result['eps']        = fmt(info['trailingEps'], prefix='₹')
+        if info.get('bookValue'):     result['book_value'] = fmt(info['bookValue'], prefix='₹')
+        if info.get('dividendYield'): result['div_yield']  = fmt(info['dividendYield'], suffix='%')
+        if info.get('returnOnEquity'):result['roe']        = fmt(info['returnOnEquity'] * 100, suffix='%')
+        if info.get('debtToEquity'):  result['debt_eq']    = fmt(info['debtToEquity'])
 
-        # Market Cap (Screener gives it in Cr already)
-        mcap_raw = safe_float(data.get('Market Cap', ''))
-        mcap = f"₹{mcap_raw:,.0f} Cr" if mcap_raw else "N/A"
+        # --- LAYER 3: Financial statements — fallback + ROCE ---
+        try:
+            income_stmt   = stock.get_income_stmt()
+            balance_sheet = stock.balance_sheet
 
-        # P/E — prefer Screener, fall back to NSE
-        pe_raw = safe_float(data.get('Stock P/E', '')) or safe_float(data.get('nse_pe', ''))
-        pe = f"{pe_raw:.2f}" if pe_raw else "N/A"
+            net_income     = get_row(income_stmt,   'Net Income', 'NetIncome')
+            ebitda         = get_row(income_stmt,   'Normalized EBITDA', 'EBITDA')
+            common_equity  = get_row(balance_sheet, 'Common Stock Equity', 'StockholdersEquity')
+            total_debt     = get_row(balance_sheet, 'Total Debt', 'LongTermDebt')
+            invested_cap   = get_row(balance_sheet, 'Invested Capital')
+            total_assets   = get_row(balance_sheet, 'Total Assets')
+            current_liab   = get_row(balance_sheet, 'Current Liabilities')
 
-        # 52-week High/Low — prefer Screener's "High / Low", fall back to NSE
-        hl_raw = data.get('High / Low', '')
-        if '/' in str(hl_raw):
-            parts = hl_raw.split('/')
-            high52 = f"₹{safe_float(parts[0]) or 'N/A'}"
-            low52 = f"₹{safe_float(parts[1]) or 'N/A'}"
-        else:
-            h = safe_float(data.get('nse_high52', ''))
-            l = safe_float(data.get('nse_low52', ''))
-            high52 = f"₹{h:.2f}" if h else "N/A"
-            low52  = f"₹{l:.2f}" if l else "N/A"
+            # Fallback EPS: Net Income / shares
+            if result['eps'] == 'N/A' and net_income and shares and shares > 0:
+                result['eps'] = f"₹{net_income / shares:.2f}"
 
-        # Additional fundamentals from Screener
-        book_val   = safe_float(data.get('Book Value', ''))
-        div_yield  = safe_float(data.get('Dividend Yield', ''))
-        roce       = safe_float(data.get('ROCE', ''))
-        roe        = safe_float(data.get('ROE', ''))
-        eps        = safe_float(data.get('EPS', ''))
-        debt_eq    = safe_float(data.get('Debt to equity', ''))
-        face_val   = safe_float(data.get('Face Value', ''))
+            # Fallback Book Value: Common Equity / shares
+            if result['book_value'] == 'N/A' and common_equity and shares and shares > 0:
+                result['book_value'] = f"₹{common_equity / shares:.2f}"
 
-        return {
-            "mcap":       mcap,
-            "pe":         pe,
-            "high52":     high52,
-            "low52":      low52,
-            "book_value": f"₹{book_val:.2f}" if book_val else "N/A",
-            "div_yield":  f"{div_yield:.2f}%" if div_yield else "N/A",
-            "roce":       f"{roce:.2f}%" if roce else "N/A",
-            "roe":        f"{roe:.2f}%" if roe else "N/A",
-            "eps":        f"₹{eps:.2f}" if eps else "N/A",
-            "debt_eq":    f"{debt_eq:.2f}" if debt_eq else "N/A",
-            "face_value": f"₹{face_val:.0f}" if face_val else "N/A",
-        }
+            # Fallback ROE: Net Income / Common Equity
+            if result['roe'] == 'N/A' and net_income and common_equity and common_equity > 0:
+                result['roe'] = f"{(net_income / common_equity) * 100:.2f}%"
+
+            # Fallback D/E: Total Debt / Common Equity (as percentage, matching yfinance format)
+            if result['debt_eq'] == 'N/A' and total_debt and common_equity and common_equity > 0:
+                result['debt_eq'] = fmt((total_debt / common_equity) * 100)
+
+            # ROCE: Net Income / Invested Capital (best approximation from available data)
+            # Fall back to Total Assets - Current Liabilities if Invested Capital missing
+            capital_employed = invested_cap or (
+                (total_assets - current_liab) if total_assets and current_liab else None
+            )
+            if net_income and capital_employed and capital_employed > 0:
+                result['roce'] = f"{(net_income / capital_employed) * 100:.2f}%"
+
+        except Exception as e:
+            print(f"Statements fallback error for {clean}: {e}")
 
     except Exception as e:
         print(f"❌ Fundamentals Error for {ticker}: {e}")
-        return {
-            "mcap": "N/A", "pe": "N/A", "high52": "N/A", "low52": "N/A",
-            "book_value": "N/A", "div_yield": "N/A", "roce": "N/A",
-            "roe": "N/A", "eps": "N/A", "debt_eq": "N/A", "face_value": "N/A"
-        }
+
+    return result
 
 @app.post("/analyze")
 async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundTasks):
