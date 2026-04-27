@@ -229,3 +229,4 @@ __pycache__/
 .venv/
 cache_*.json
 *.pyc
+market_data.db
