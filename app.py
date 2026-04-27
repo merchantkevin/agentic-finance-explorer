@@ -2,12 +2,14 @@ import os
 import uuid
 import json
 import sqlite3
+import time
 import yfinance as yf
 from datetime import datetime, timedelta
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from main import run_financial_analysis
+from langfuse import Langfuse
 
 # --- 1. DATABASE CONFIGURATION ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -39,6 +41,13 @@ def save_to_db(ticker, price, data_dict):
 
 # Initialize DB on startup
 init_db()
+
+# --- LANGFUSE OBSERVABILITY CLIENT ---
+langfuse = Langfuse(
+    public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+    secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+    host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+)
 
 # --- 2. API SETUP ---
 app = FastAPI(title="AI Financial Analyst API")
@@ -125,11 +134,42 @@ async def get_status(job_id: str):
 
 # --- 5. BACKGROUND ENGINE ---
 def execute_analysis(job_id: str, ticker: str):
+    # --- START LANGFUSE TRACE ---
+    # A "trace" is one complete run of the analysis for a ticker.
+    # Think of it like opening a logbook entry for this job.
+    start_time = time.time()
+
+    trace = langfuse.trace(
+        name="stock-analysis",
+        metadata={
+            "ticker": ticker,
+            "job_id": job_id
+        },
+        tags=[ticker]
+    )
+
     try:
-        # Run CrewAI Agents
+        # --- START A SPAN FOR THE CREWAI RUN ---
+        # A "span" is a timed section inside the trace.
+        # This one measures exactly how long the CrewAI agents take.
+        crew_span = trace.span(
+            name="crewai-kickoff",
+            input={"ticker": ticker}
+        )
+
+        # Run CrewAI Agents (nothing changed here)
         output = run_financial_analysis(ticker)
-        
-        # Safely extract data
+
+        # Calculate how long the agents took
+        latency = round(time.time() - start_time, 2)
+
+        # --- END THE CREWAI SPAN ---
+        crew_span.end(
+            output={"status": "success"},
+            metadata={"latency_seconds": latency}
+        )
+
+        # Safely extract data (nothing changed here)
         if hasattr(output, 'json_dict') and output.json_dict:
             analysis_data = output.json_dict
         else:
@@ -141,19 +181,55 @@ def execute_analysis(job_id: str, ticker: str):
                 "recommendation": "Manual Review Required"
             }
 
-        # Get price for the DB record
+        # Get price for the DB record (nothing changed here)
         final_price = get_safe_price(ticker)
-        
-        # Save to SQL
+
+        # Save to SQL (nothing changed here)
         save_to_db(ticker, final_price, analysis_data)
-        
-        # Update results memory
+
+        # Update results memory (nothing changed here)
         results_db[job_id] = {
-            "status": "completed", 
+            "status": "completed",
             "result": analysis_data,
             "source": "Live Agent Analysis"
         }
-        
+
+        # --- UPDATE TRACE WITH FINAL RESULT ---
+        # Now that we have the result, attach it to the trace.
+        # This is what you'll see in the Langfuse dashboard.
+        trace.update(
+            output={
+                "technical_signal": analysis_data.get("technical_signal"),
+                "sentiment_score": analysis_data.get("sentiment_score"),
+                "status": "completed"
+            },
+            metadata={
+                "ticker": ticker,
+                "latency_seconds": latency,
+                "job_id": job_id,
+                "fallback_used": not (hasattr(output, 'json_dict') and output.json_dict)
+            }
+        )
+
     except Exception as e:
+        # --- LOG THE FAILURE TO LANGFUSE ---
+        latency = round(time.time() - start_time, 2)
         print(f"❌ Background Task Failed: {e}")
         results_db[job_id] = {"status": "failed", "error": str(e)}
+
+        trace.update(
+            metadata={
+                "ticker": ticker,
+                "job_id": job_id,
+                "status": "failed",
+                "error": str(e),
+                "latency_seconds": latency
+            }
+        )
+
+    finally:
+        # --- FLUSH ENSURES DATA IS SENT ---
+        # Langfuse batches data before sending. flush() forces it to send now.
+        # This is important in background tasks where the process might end
+        # before the batch is sent automatically.
+        langfuse.flush()

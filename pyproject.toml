@@ -10,6 +10,7 @@ dependencies = [
     "crewai-tools>=1.9.3",
     "fastapi>=0.128.6",
     "langchain-google-genai>=4.2.0",
+    "langfuse<3",
     "pandas>=2.3.3",
     "pandas-ta>=0.4.71b0",
     "plotly>=6.5.2",
