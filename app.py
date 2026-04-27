@@ -162,10 +162,10 @@ def get_fundamentals(ticker: str):
             total_assets   = get_row(balance_sheet, 'Total Assets')
             current_liab   = get_row(balance_sheet, 'Current Liabilities')
             
-            # P/E: Price / EPS
-            if result['pe'] == 'N/A' and price:
-                eps_val = sf(result['eps'].replace('₹', '')) if result['eps'] != 'N/A' else None
-                if eps_val and eps_val > 0:
+            # P/E: Price / EPS — calculate directly, don't rely on result['eps'] string
+            if result['pe'] == 'N/A' and price and net_income and shares and shares > 0:
+                eps_val = net_income / shares
+                if eps_val > 0:
                     result['pe'] = f"{price / eps_val:.2f}"
 
             # Dividend Yield: Annual Dividends Paid / Market Cap * 100
