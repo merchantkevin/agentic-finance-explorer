@@ -130,22 +130,35 @@ def live_price_sidebar(ticker_symbol):
         # FEATURE 3: Minimalist Fundamentals inside a collapsible expander
         with st.expander("📊 Fundamental Snapshot", expanded=False):
             funds = get_fundamentals(ticker_symbol)
-            
-            st.metric(
-                label="Market Cap", 
-                value=funds['mcap'], 
-                help="The total price tag of the entire company. If you wanted to buy every single share of this business today, this is how much it would cost."
-            )
-            st.metric(
-                label="P/E Ratio", 
-                value=funds['pe'], 
-                help="How expensive the stock is compared to the actual profit the company makes. A lower number usually means you are getting a better deal."
-            )
-            st.metric(
-                label="52-Week Range", 
-                value=f"₹{funds['low52']} - ₹{funds['high52']}", 
-                help="The absolute highest and lowest price this stock has sold for over the last year."
-            )
+
+            st.metric(label="Market Cap", value=funds['mcap'],
+                help="Total value of all shares. What it would cost to buy the entire company.")
+            st.metric(label="P/E Ratio", value=funds['pe'],
+                help="Price vs earnings. Lower = cheaper relative to profit.")
+            st.metric(label="52-Week High", value=funds['high52'],
+                help="Highest price the stock reached in the last year.")
+            st.metric(label="52-Week Low", value=funds['low52'],
+                help="Lowest price the stock reached in the last year.")
+
+            st.markdown("---")
+
+            st.metric(label="EPS", value=funds['eps'],
+                help="Earnings Per Share — profit attributable to each share.")
+            st.metric(label="Book Value", value=funds['book_value'],
+                help="Net asset value per share. What shareholders would get if the company was liquidated.")
+            st.metric(label="Dividend Yield", value=funds['div_yield'],
+                help="Annual dividend as a % of current price. Higher = more passive income.")
+
+            st.markdown("---")
+
+            st.metric(label="ROCE", value=funds['roce'],
+                help="Return on Capital Employed. How efficiently the company uses its capital.")
+            st.metric(label="ROE", value=funds['roe'],
+                help="Return on Equity. Profit generated for every rupee of shareholder equity.")
+            st.metric(label="Debt / Equity", value=funds['debt_eq'],
+                help="How much debt the company carries vs shareholder equity. Lower is safer.")
+            st.metric(label="Face Value", value=funds['face_value'],
+                help="The original issue price of the share. Used to calculate dividends and splits.")
     else:
         st.warning("⚠️ Market data unavailable.")
 

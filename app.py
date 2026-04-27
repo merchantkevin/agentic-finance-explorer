@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from main import run_financial_analysis
 from langfuse import Langfuse
+from bs4 import BeautifulSoup
 
 # --- 1. DATABASE CONFIGURATION ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -86,45 +87,134 @@ def home():
 @app.get("/fundamentals/{ticker}")
 def get_fundamentals(ticker: str):
     try:
-        ticker_upper = ticker.upper().strip()
-        clean_ticker = ticker_upper
-
+        # --- Clean the ticker symbol ---
+        clean = ticker.upper().strip()
         for suffix in ['.NSE', '.NS', '.BSE', '.BO']:
-            if clean_ticker.endswith(suffix):
-                clean_ticker = clean_ticker[:-len(suffix)]
+            if clean.endswith(suffix):
+                clean = clean[:-len(suffix)]
                 break
 
-        if clean_ticker.isdigit() or ticker_upper.endswith(('.BO', '.BSE')):
-            yf_ticker = f"{clean_ticker}.BO"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml',
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
+
+        data = {}
+
+        # --- PRIMARY: Screener.in ---
+        # Try consolidated view first, fall back to standalone
+        for url in [
+            f"https://www.screener.in/company/{clean}/consolidated/",
+            f"https://www.screener.in/company/{clean}/"
+        ]:
+            try:
+                res = requests.get(url, headers=headers, timeout=10)
+                if res.status_code == 200:
+                    soup = BeautifulSoup(res.text, 'html.parser')
+                    ratios = soup.find('ul', id='top-ratios')
+                    if ratios:
+                        for li in ratios.find_all('li'):
+                            name_el = li.find('span', class_='name')
+                            value_el = li.find('span', class_='number')
+                            if name_el and value_el:
+                                key = name_el.text.strip()
+                                val = value_el.text.strip().replace(',', '')
+                                data[key] = val
+                    if data:
+                        break
+            except Exception as e:
+                print(f"Screener fetch error ({url}): {e}")
+                continue
+
+        # --- SECONDARY: NSE API for real-time data ---
+        # Fills in anything Screener missed, especially 52w high/low
+        try:
+            session = requests.Session()
+            nse_headers = {
+                **headers,
+                'Referer': 'https://www.nseindia.com/',
+                'Accept': '*/*',
+            }
+            session.get("https://www.nseindia.com", headers=nse_headers, timeout=8)
+            nse_res = session.get(
+                f"https://www.nseindia.com/api/quote-equity?symbol={clean}",
+                headers=nse_headers,
+                timeout=8
+            )
+            if nse_res.status_code == 200:
+                nse = nse_res.json()
+                price_info = nse.get('priceInfo', {})
+                week_hl = price_info.get('weekHighLow', {})
+                metadata = nse.get('metadata', {})
+
+                # Only use NSE data if Screener didn't provide it
+                if 'nse_high52' not in data:
+                    data['nse_high52'] = str(week_hl.get('max', ''))
+                if 'nse_low52' not in data:
+                    data['nse_low52'] = str(week_hl.get('min', ''))
+                if 'nse_pe' not in data:
+                    data['nse_pe'] = str(metadata.get('pdSymbolPe', ''))
+        except Exception as e:
+            print(f"NSE API error: {e}")
+
+        # --- PARSE & FORMAT ---
+        def safe_float(val):
+            try:
+                return float(str(val).replace(',', '').strip())
+            except:
+                return None
+
+        # Market Cap (Screener gives it in Cr already)
+        mcap_raw = safe_float(data.get('Market Cap', ''))
+        mcap = f"₹{mcap_raw:,.0f} Cr" if mcap_raw else "N/A"
+
+        # P/E — prefer Screener, fall back to NSE
+        pe_raw = safe_float(data.get('Stock P/E', '')) or safe_float(data.get('nse_pe', ''))
+        pe = f"{pe_raw:.2f}" if pe_raw else "N/A"
+
+        # 52-week High/Low — prefer Screener's "High / Low", fall back to NSE
+        hl_raw = data.get('High / Low', '')
+        if '/' in str(hl_raw):
+            parts = hl_raw.split('/')
+            high52 = f"₹{safe_float(parts[0]) or 'N/A'}"
+            low52 = f"₹{safe_float(parts[1]) or 'N/A'}"
         else:
-            yf_ticker = f"{clean_ticker}.NS"
+            h = safe_float(data.get('nse_high52', ''))
+            l = safe_float(data.get('nse_low52', ''))
+            high52 = f"₹{h:.2f}" if h else "N/A"
+            low52  = f"₹{l:.2f}" if l else "N/A"
 
-        stock = yf.Ticker(yf_ticker)
-        fast = stock.fast_info
-
-        try:
-            mcap = fast.market_cap if hasattr(fast, 'market_cap') else None
-            high52 = fast.year_high if hasattr(fast, 'year_high') else None
-            low52 = fast.year_low if hasattr(fast, 'year_low') else None
-        except Exception:
-            mcap, high52, low52 = None, None, None
-
-        try:
-            info = stock.info
-            pe = info.get('trailingPE')
-        except Exception:
-            pe = None
+        # Additional fundamentals from Screener
+        book_val   = safe_float(data.get('Book Value', ''))
+        div_yield  = safe_float(data.get('Dividend Yield', ''))
+        roce       = safe_float(data.get('ROCE', ''))
+        roe        = safe_float(data.get('ROE', ''))
+        eps        = safe_float(data.get('EPS', ''))
+        debt_eq    = safe_float(data.get('Debt to equity', ''))
+        face_val   = safe_float(data.get('Face Value', ''))
 
         return {
-            "mcap": f"₹{mcap/1e7:.2f} Cr" if mcap and mcap > 1e7 else "N/A",
-            "pe": f"{pe:.2f}" if pe and isinstance(pe, (int, float)) else "N/A",
-            "high52": f"{high52:.2f}" if high52 and isinstance(high52, (int, float)) else "N/A",
-            "low52": f"{low52:.2f}" if low52 and isinstance(low52, (int, float)) else "N/A"
+            "mcap":       mcap,
+            "pe":         pe,
+            "high52":     high52,
+            "low52":      low52,
+            "book_value": f"₹{book_val:.2f}" if book_val else "N/A",
+            "div_yield":  f"{div_yield:.2f}%" if div_yield else "N/A",
+            "roce":       f"{roce:.2f}%" if roce else "N/A",
+            "roe":        f"{roe:.2f}%" if roe else "N/A",
+            "eps":        f"₹{eps:.2f}" if eps else "N/A",
+            "debt_eq":    f"{debt_eq:.2f}" if debt_eq else "N/A",
+            "face_value": f"₹{face_val:.0f}" if face_val else "N/A",
         }
 
     except Exception as e:
         print(f"❌ Fundamentals Error for {ticker}: {e}")
-        return {"mcap": "N/A", "pe": "N/A", "high52": "N/A", "low52": "N/A"}
+        return {
+            "mcap": "N/A", "pe": "N/A", "high52": "N/A", "low52": "N/A",
+            "book_value": "N/A", "div_yield": "N/A", "roce": "N/A",
+            "roe": "N/A", "eps": "N/A", "debt_eq": "N/A", "face_value": "N/A"
+        }
 
 @app.post("/analyze")
 async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundTasks):
