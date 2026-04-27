@@ -53,11 +53,16 @@ langfuse = Langfuse(
 # --- 2. API SETUP ---
 app = FastAPI(title="AI Financial Analyst API")
 
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS",
+    "https://agentic-finance-explorer-zrkwkgnuyidyfgbqc8jb4a.streamlit.app"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["POST", "GET"],
+    allow_headers=["Content-Type"],
 )
 
 results_db = {}
@@ -157,7 +162,7 @@ def get_fundamentals(ticker: str):
             net_income     = get_row(income_stmt,   'Net Income', 'NetIncome')
             ebitda         = get_row(income_stmt,   'Normalized EBITDA', 'EBITDA')
             common_equity  = get_row(balance_sheet, 'Common Stock Equity', 'StockholdersEquity')
-            total_debt     = get_row(balance_sheet, 'Total Debt', 'LongTermDebt')
+            total_debt     = get_row(balance_sheet, 'Total Debt', 'LongTermDebt')   
             invested_cap   = get_row(balance_sheet, 'Invested Capital')
             total_assets   = get_row(balance_sheet, 'Total Assets')
             current_liab   = get_row(balance_sheet, 'Current Liabilities')
