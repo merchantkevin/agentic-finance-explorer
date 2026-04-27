@@ -82,6 +82,49 @@ def get_safe_price(ticker):
 @app.get("/")
 def home():
     return {"status": "AI Agents Online", "version": "2.0"}
+    
+@app.get("/fundamentals/{ticker}")
+def get_fundamentals(ticker: str):
+    try:
+        ticker_upper = ticker.upper().strip()
+        clean_ticker = ticker_upper
+
+        for suffix in ['.NSE', '.NS', '.BSE', '.BO']:
+            if clean_ticker.endswith(suffix):
+                clean_ticker = clean_ticker[:-len(suffix)]
+                break
+
+        if clean_ticker.isdigit() or ticker_upper.endswith(('.BO', '.BSE')):
+            yf_ticker = f"{clean_ticker}.BO"
+        else:
+            yf_ticker = f"{clean_ticker}.NS"
+
+        stock = yf.Ticker(yf_ticker)
+        fast = stock.fast_info
+
+        try:
+            mcap = fast.market_cap if hasattr(fast, 'market_cap') else None
+            high52 = fast.year_high if hasattr(fast, 'year_high') else None
+            low52 = fast.year_low if hasattr(fast, 'year_low') else None
+        except Exception:
+            mcap, high52, low52 = None, None, None
+
+        try:
+            info = stock.info
+            pe = info.get('trailingPE')
+        except Exception:
+            pe = None
+
+        return {
+            "mcap": f"₹{mcap/1e7:.2f} Cr" if mcap and mcap > 1e7 else "N/A",
+            "pe": f"{pe:.2f}" if pe and isinstance(pe, (int, float)) else "N/A",
+            "high52": f"{high52:.2f}" if high52 and isinstance(high52, (int, float)) else "N/A",
+            "low52": f"{low52:.2f}" if low52 and isinstance(low52, (int, float)) else "N/A"
+        }
+
+    except Exception as e:
+        print(f"❌ Fundamentals Error for {ticker}: {e}")
+        return {"mcap": "N/A", "pe": "N/A", "high52": "N/A", "low52": "N/A"}
 
 @app.post("/analyze")
 async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundTasks):

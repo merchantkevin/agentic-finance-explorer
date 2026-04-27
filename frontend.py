@@ -41,11 +41,6 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-import requests
-from bs4 import BeautifulSoup
-from datetime import datetime
-import yfinance as yf
-
 # --- 3. THE SMART PRICE ENGINE (Groww + Google + Auto-Router) ---
 def get_current_price(ticker):
     ticker_upper = ticker.upper().strip()
@@ -103,58 +98,16 @@ def get_current_price(ticker):
 
     return None, None, None, False
 
-@st.cache_data(ttl=1800) 
+@st.cache_data(ttl=1800)
 def get_fundamentals(ticker):
     try:
-        ticker_upper = ticker.upper().strip()
-        
-        clean_ticker = ticker_upper
-        for suffix in ['.NSE', '.NS', '.BSE', '.BO']:
-            if clean_ticker.endswith(suffix):
-                clean_ticker = clean_ticker[:-len(suffix)]
-                break
-                
-        if clean_ticker.isdigit() or ticker_upper.endswith(('.BO', '.BSE')):
-            yf_ticker = f"{clean_ticker}.BO"
-        else:
-            yf_ticker = f"{clean_ticker}.NS"
-            
-        stock = yf.Ticker(yf_ticker)
-        
-        # THE FIX: Bypass the broken `.info` endpoint using `.fast_info`
-        # fast_info hits a resilient Yahoo API that doesn't get blocked
-        fast = stock.fast_info
-        
-        try:
-            # fast_info uses properties in modern yfinance versions
-            mcap = fast.market_cap if hasattr(fast, 'market_cap') else fast.get('marketCap')
-            high52 = fast.year_high if hasattr(fast, 'year_high') else fast.get('yearHigh')
-            low52 = fast.year_low if hasattr(fast, 'year_low') else fast.get('yearLow')
-        except Exception:
-            mcap, high52, low52 = None, None, None
-
-        # .info is strictly used as a fallback for P/E since fast_info doesn't carry it
-        try:
-            info = stock.info
-            pe = info.get('trailingPE')
-        except Exception:
-            pe = None
-
-        # Safely format strings only if the data exists
-        mcap_str = f"₹{mcap/1e7:.2f} Cr" if mcap and mcap > 1e7 else "N/A"
-        pe_str = f"{pe:.2f}" if pe and isinstance(pe, (int, float)) else "N/A"
-        high_str = f"{high52:.2f}" if high52 and isinstance(high52, (int, float)) else "N/A"
-        low_str = f"{low52:.2f}" if low52 and isinstance(low52, (int, float)) else "N/A"
-        
-        return {
-            "mcap": mcap_str,
-            "pe": pe_str,
-            "high52": high_str,
-            "low52": low_str
-        }
+        backend_url = "https://agentic-finance-explorer.onrender.com"
+        response = requests.get(f"{backend_url}/fundamentals/{ticker}", timeout=10)
+        if response.status_code == 200:
+            return response.json()
     except Exception as e:
-        print(f"Fundamentals Error for {ticker}: {e}")
-        return {"mcap": "N/A", "pe": "N/A", "high52": "N/A", "low52": "N/A"}
+        print(f"Fundamentals fetch error: {e}")
+    return {"mcap": "N/A", "pe": "N/A", "high52": "N/A", "low52": "N/A"}
 
 # --- 4. UI FRAGMENTS ---
 @st.fragment(run_every=10) 
