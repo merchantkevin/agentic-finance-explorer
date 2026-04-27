@@ -95,7 +95,7 @@ def get_fundamentals(ticker: str):
     result = {
         "mcap": "N/A", "pe": "N/A", "high52": "N/A", "low52": "N/A",
         "book_value": "N/A", "div_yield": "N/A", "roce": "N/A",
-        "roe": "N/A", "eps": "N/A", "debt_eq": "N/A", "face_value": "N/A"
+        "roe": "N/A", "eps": "N/A", "debt_eq": "N/A"
     }
 
     def sf(val):
@@ -143,11 +143,9 @@ def get_fundamentals(ticker: str):
             info = stock.get_info() or {}
         except Exception as e:
             print(f"get_info() failed for {clean}: {e}")
-
-        if info.get('trailingPE'):    result['pe']         = fmt(info['trailingPE'])
+       
         if info.get('trailingEps'):   result['eps']        = fmt(info['trailingEps'], prefix='₹')
         if info.get('bookValue'):     result['book_value'] = fmt(info['bookValue'], prefix='₹')
-        if info.get('dividendYield'): result['div_yield']  = fmt(info['dividendYield'], suffix='%')
         if info.get('returnOnEquity'):result['roe']        = fmt(info['returnOnEquity'] * 100, suffix='%')
         if info.get('debtToEquity'):  result['debt_eq']    = fmt(info['debtToEquity'])
 
@@ -163,7 +161,22 @@ def get_fundamentals(ticker: str):
             invested_cap   = get_row(balance_sheet, 'Invested Capital')
             total_assets   = get_row(balance_sheet, 'Total Assets')
             current_liab   = get_row(balance_sheet, 'Current Liabilities')
+            
+            # P/E: Price / EPS
+            if result['pe'] == 'N/A' and price:
+                eps_val = sf(result['eps'].replace('₹', '')) if result['eps'] != 'N/A' else None
+                if eps_val and eps_val > 0:
+                    result['pe'] = f"{price / eps_val:.2f}"
 
+            # Dividend Yield: Annual Dividends Paid / Market Cap * 100
+            try:
+                cashflow = stock.cashflow
+                dividends_paid = get_row(cashflow, 'Cash Dividends Paid', 'Common Stock Dividend Paid')
+                if dividends_paid and mcap and mcap > 0:
+                    # dividends_paid is negative in cashflow statement, so abs()
+                    result['div_yield'] = f"{(abs(dividends_paid) / mcap) * 100:.2f}%"
+            except Exception as e:
+                print(f"Dividend yield calc error: {e}")
             # Fallback EPS: Net Income / shares
             if result['eps'] == 'N/A' and net_income and shares and shares > 0:
                 result['eps'] = f"₹{net_income / shares:.2f}"

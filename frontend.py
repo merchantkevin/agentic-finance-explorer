@@ -157,8 +157,6 @@ def live_price_sidebar(ticker_symbol):
                 help="Return on Equity. Profit generated for every rupee of shareholder equity.")
             st.metric(label="Debt / Equity", value=funds['debt_eq'],
                 help="How much debt the company carries vs shareholder equity. Lower is safer.")
-            st.metric(label="Face Value", value=funds['face_value'],
-                help="The original issue price of the share. Used to calculate dividends and splits.")
     else:
         st.warning("⚠️ Market data unavailable.")
 
