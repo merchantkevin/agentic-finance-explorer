@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from main import run_financial_analysis
 from langfuse import Langfuse
 from bs4 import BeautifulSoup
+from evaluator import run_eval
 
 # --- 1. DATABASE CONFIGURATION ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -182,6 +183,7 @@ def get_fundamentals(ticker: str):
                     result['div_yield'] = f"{(abs(dividends_paid) / mcap) * 100:.2f}%"
             except Exception as e:
                 print(f"Dividend yield calc error: {e}")
+                
             # Fallback EPS: Net Income / shares
             if result['eps'] == 'N/A' and net_income and shares and shares > 0:
                 result['eps'] = f"₹{net_income / shares:.2f}"
@@ -312,33 +314,78 @@ def execute_analysis(job_id: str, ticker: str):
                 "recommendation": "Manual Review Required"
             }
 
-        # Get price for the DB record (nothing changed here)
+        # Get price for the DB record
         final_price = get_safe_price(ticker)
 
-        # Save to SQL (nothing changed here)
+        # Save to SQL
         save_to_db(ticker, final_price, analysis_data)
 
-        # Update results memory (nothing changed here)
+        # Update results memory
         results_db[job_id] = {
             "status": "completed",
             "result": analysis_data,
             "source": "Live Agent Analysis"
         }
 
-        # --- UPDATE TRACE WITH FINAL RESULT ---
-        # Now that we have the result, attach it to the trace.
-        # This is what you'll see in the Langfuse dashboard.
+        # --- RUN EVALUATION ---
+        # This scores the quality of the analysis that just completed.
+        # It runs after the result is saved so a eval failure never
+        # blocks the user from seeing their result.
+        eval_scores = run_eval(analysis_data, ticker)
+
+        # --- LOG EVAL SCORES TO LANGFUSE ---
+        # Each score() call creates a named metric on the trace.
+        # You'll see these as individual score cards in the Langfuse dashboard.
+
+        # Score 1: Signal/Score Consistency (0.0 or 1.0)
+        langfuse.score(
+            trace_id=trace.id,
+            name="signal_consistency",
+            value=eval_scores["signal_consistency"],
+            comment=eval_scores["consistency_reason"]
+        )
+
+        # Score 2: Risk Specificity (1–5)
+        langfuse.score(
+            trace_id=trace.id,
+            name="risk_specificity",
+            value=eval_scores["risk_specificity"],
+            comment=eval_scores["reasoning"]
+        )
+
+        # Score 3: Catalyst Specificity (1–5)
+        langfuse.score(
+            trace_id=trace.id,
+            name="catalyst_specificity",
+            value=eval_scores["catalyst_specificity"],
+            comment=eval_scores["reasoning"]
+        )
+
+        # Score 4: Overall Quality (1–10)
+        langfuse.score(
+            trace_id=trace.id,
+            name="overall_quality",
+            value=eval_scores["overall_quality"],
+            comment=eval_scores["reasoning"]
+        )
+        
+        langfuse.flush()
+
+        # --- UPDATE TRACE WITH FINAL RESULT + EVAL SUMMARY ---
         trace.update(
             output={
-                "technical_signal": analysis_data.get("technical_signal"),
-                "sentiment_score": analysis_data.get("sentiment_score"),
+                "technical_signal":   analysis_data.get("technical_signal"),
+                "sentiment_score":    analysis_data.get("sentiment_score"),
+                "overall_quality":    eval_scores["overall_quality"],
+                "signal_consistency": eval_scores["signal_consistency"],
                 "status": "completed"
             },
             metadata={
-                "ticker": ticker,
+                "ticker":          ticker,
                 "latency_seconds": latency,
-                "job_id": job_id,
-                "fallback_used": not (hasattr(output, 'json_dict') and output.json_dict)
+                "job_id":          job_id,
+                "fallback_used":   not (hasattr(output, 'json_dict') and output.json_dict),
+                "eval_reasoning":  eval_scores["reasoning"]
             }
         )
 
